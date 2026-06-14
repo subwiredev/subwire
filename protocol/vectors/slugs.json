@@ -1,0 +1,31 @@
+{
+  "$comment": "Conformance vectors for subwire slug validation (protocol v1). A slug is 2-32 chars of [a-z0-9-], no leading/trailing hyphen, lowercase only (case is never folded - uppercase input is INVALID, not normalized). 'identities' is reserved by the sw:// URI grammar.",
+  "version": "1",
+  "valid": [
+    "ab",
+    "00",
+    "a1",
+    "news",
+    "meta",
+    "two-words",
+    "a-b-c",
+    "a--b",
+    "0-0",
+    "abcdefghijklmnopqrstuvwxyz012345"
+  ],
+  "invalid": [
+    "",
+    "a",
+    "abcdefghijklmnopqrstuvwxyz0123456",
+    "News",
+    "NEWS",
+    "-ab",
+    "ab-",
+    "a_b",
+    "a.b",
+    "a b",
+    "a/b",
+    "héllo",
+    "identities"
+  ]
+}

@@ -1,0 +1,24 @@
+{
+  "$comment": "Conformance vectors for subwire address parsing (protocol v1). An address is either a bare slug (authority null - relative to the local/platform authority) or '{authority}/{slug}'. An authority must contain a dot or a port so it can never collide with a slug. Canonicalization: the authority is lowercased; slugs are never case-folded (uppercase is invalid); empty path segments are ignored. 'canonical' is the formatted address - for fully-qualified addresses this is also the token SCOPE string, compared by exact string equality during verification.",
+  "version": "1",
+  "cases": [
+    { "input": "news", "expect": { "authority": null, "slug": "news" }, "canonical": "news" },
+    { "input": "/news/", "expect": { "authority": null, "slug": "news" }, "canonical": "news" },
+    { "input": "thirdparty.com/chan", "expect": { "authority": "thirdparty.com", "slug": "chan" }, "canonical": "thirdparty.com/chan" },
+    { "input": "ThirdParty.COM/chan", "expect": { "authority": "thirdparty.com", "slug": "chan" }, "canonical": "thirdparty.com/chan" },
+    { "input": "localhost:8088/news", "expect": { "authority": "localhost:8088", "slug": "news" }, "canonical": "localhost:8088/news" },
+    { "input": "sub.domain.example.co.uk/deep", "expect": { "authority": "sub.domain.example.co.uk", "slug": "deep" }, "canonical": "sub.domain.example.co.uk/deep" },
+    { "input": "thirdparty.com//chan", "expect": { "authority": "thirdparty.com", "slug": "chan" }, "canonical": "thirdparty.com/chan" },
+    { "input": "", "expect": null },
+    { "input": "a", "expect": null },
+    { "input": "thirdparty.com", "expect": null },
+    { "input": "thirdparty.com/Chan", "expect": null },
+    { "input": "News", "expect": null },
+    { "input": "news/extra", "expect": null },
+    { "input": "thirdparty.com/chan/extra", "expect": null },
+    { "input": "thirdparty.com/identities", "expect": null },
+    { "input": "-bad.com/chan", "expect": null },
+    { "input": "bad.com-/chan", "expect": null },
+    { "input": "identities", "expect": null }
+  ]
+}

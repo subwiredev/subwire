@@ -1,0 +1,4 @@
+[test]
+# Loads .env.test before any user import so tests can never point at a real
+# database — setup-env.ts aborts unless DATABASE_URL_DIRECT names subwire_test.
+preload = ["./tests/setup-env.ts"]

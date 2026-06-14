@@ -1,0 +1,17 @@
+{
+  "name": "@subwire/docs",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "astro dev --host 0.0.0.0",
+    "build": "astro build",
+    "preview": "astro preview --host 0.0.0.0"
+  },
+  "dependencies": {
+    "@astrojs/starlight": "0.38.4",
+    "astro": "6.1.10"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,35 @@
+name: Publish protocol to npm
+
+# Tag-driven publish of the `subwire` package (protocol/). Bump
+# protocol/package.json version, then:
+#   git tag v<version> && git push --tags
+# Requires the NPM_TOKEN repo secret (npm automation token).
+
+on:
+  push:
+    tags:
+      - "v*"
+
+defaults:
+  run:
+    working-directory: protocol
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+      - run: bun install --frozen-lockfile
+      - name: Verify tag matches package version
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          [ "$PKG_VERSION" = "$TAG_VERSION" ] || { echo "tag $TAG_VERSION != package $PKG_VERSION"; exit 1; }
+      - run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

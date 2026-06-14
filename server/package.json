@@ -1,0 +1,28 @@
+{
+  "name": "@subwire/server",
+  "version": "0.0.1",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "bun run --watch src/index.ts",
+    "start": "bun run src/index.ts",
+    "migrate": "bun run src/db/migrate.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test --max-concurrency=1"
+  },
+  "dependencies": {
+    "@hono/zod-validator": "^0.7.6",
+    "subwire": "workspace:*",
+    "drizzle-orm": "^0.45.1",
+    "hono": "^4.12.5",
+    "nanoid": "^5.1.9",
+    "pino": "^9.5.0",
+    "postgres": "^3.4.8",
+    "zod": "^3.25.56"
+  },
+  "devDependencies": {
+    "bun-types": "latest",
+    "typescript": "^5.9.3"
+  }
+}

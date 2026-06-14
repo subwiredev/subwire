@@ -1,0 +1,7 @@
+node_modules
+dist
+.env
+*.log
+
+# Local subwire server config — copy server/subwire.config.example.json
+subwire.config.json

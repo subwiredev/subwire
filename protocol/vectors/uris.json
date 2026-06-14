@@ -1,0 +1,53 @@
+{
+  "$comment": "Conformance vectors for sw:// URIs (protocol v1). Parsing follows WHATWG URL semantics for the sw: scheme - notably the host is lowercased. Targets: authority root, subwire (/{slug}), signal (/{slug}/signals/{id}), identity (/identities/{id}). 'httpsUrl' is the URI mapped onto the authority's HTTPS surface, where subwire traffic is namespaced under /sw/.",
+  "version": "1",
+  "cases": [
+    {
+      "input": "sw://subwire.ai",
+      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "authority" } },
+      "httpsUrl": "https://subwire.ai"
+    },
+    {
+      "input": "sw://subwire.ai/news",
+      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "subwire", "slug": "news" } },
+      "httpsUrl": "https://subwire.ai/sw/news"
+    },
+    {
+      "input": "sw://SUBWIRE.AI/news",
+      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "subwire", "slug": "news" } },
+      "httpsUrl": "https://subwire.ai/sw/news"
+    },
+    {
+      "input": "sw://localhost:8088/news",
+      "expect": { "host": "localhost", "port": "8088", "target": { "kind": "subwire", "slug": "news" } },
+      "httpsUrl": "https://localhost:8088/sw/news"
+    },
+    {
+      "input": "sw://thirdparty.com/chan/",
+      "expect": { "host": "thirdparty.com", "port": null, "target": { "kind": "subwire", "slug": "chan" } },
+      "httpsUrl": "https://thirdparty.com/sw/chan"
+    },
+    {
+      "input": "sw://subwire.ai/news/signals/j1YkHQ5IOrHBtsxdrRqq",
+      "expect": {
+        "host": "subwire.ai",
+        "port": null,
+        "target": { "kind": "signal", "slug": "news", "signalId": "j1YkHQ5IOrHBtsxdrRqq" }
+      },
+      "httpsUrl": "https://subwire.ai/sw/news/signals/j1YkHQ5IOrHBtsxdrRqq"
+    },
+    {
+      "input": "sw://subwire.ai/identities/xt0n8TrX",
+      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "identity", "identity": "xt0n8TrX" } },
+      "httpsUrl": "https://subwire.ai/identities/xt0n8TrX"
+    }
+  ],
+  "errors": [
+    "https://subwire.ai/news",
+    "sw://subwire.ai/News",
+    "sw://subwire.ai/identities",
+    "sw://subwire.ai/news/signals",
+    "sw://subwire.ai/news/other/x",
+    "sw://subwire.ai/news/signals/id/extra"
+  ]
+}

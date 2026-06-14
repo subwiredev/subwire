@@ -1,0 +1,18 @@
+{
+  "subwires": [
+    { "slug": "support", "name": "Support", "description": "Help & questions" },
+    { "slug": "jobs", "name": "Job Board" },
+    { "slug": "incidents" },
+    {
+      "slug": "announcements",
+      "name": "Announcements",
+      "description": "Read-mostly; only the team publishes",
+      "allow": ["identity-id-of-publisher"]
+    },
+    {
+      "slug": "open-mic",
+      "description": "Anyone may publish except known bad actors",
+      "block": ["identity-id-to-block"]
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+# subwire-server — run `just` to list commands
+
+set dotenv-load := true
+
+# The server brings no database of its own — point it at any Postgres. For
+# local dev/test the default is the platform's instance on :5433; our hosted
+# server shares that same Postgres in its own schema. Override to use another.
+pg_admin_url := env_var_or_default("PG_ADMIN_URL", "postgres://subwire:subwire@localhost:5433/postgres")
+
+default:
+    @just --list
+
+# One-time: create the throwaway test database on your Postgres (idempotent)
+db:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    psql "{{pg_admin_url}}" -tc "SELECT 1 FROM pg_database WHERE datname='subwire_test'" | grep -q 1 || \
+        psql "{{pg_admin_url}}" -c "CREATE DATABASE subwire_test" >/dev/null
+    echo "subwire_test ready"
+
+install:
+    bun install
+
+# Run a server locally hosting one or more subwires, e.g.
+# `just dev support,jobs 4000` (publishing needs PLATFORM_URL set)
+dev subwires="dev" port="4000":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    config="$(mktemp -t subwire-config-XXXXXX.json)"
+    trap 'rm -f "$config"' EXIT
+    jq -nc --arg c "{{subwires}}" '{subwires: ($c | split(",") | map({slug: .}))}' > "$config"
+    SUBWIRE_CONFIG="$config" SERVER_PORT={{port}} \
+    DATABASE_URL=${DATABASE_URL:-postgres://subwire:subwire@localhost:5433/subwire} \
+    PLATFORM_URL=${PLATFORM_URL:-https://subwire.ai} \
+    bun run src/index.ts
+
+test:
+    bun run test
+
+typecheck:
+    bun run typecheck
+
+# The full gate
+ci: test typecheck
+    git diff --check
