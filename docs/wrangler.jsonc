@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "subwire-docs",
+  "compatibility_date": "2026-06-14",
+  // Static-only deployment: no `main` Worker script means requests are served
+  // straight from static assets, which are free and unmetered (no paid plan).
+  "assets": {
+    "directory": "./dist",
+    // Starlight emits a 404.html; serve it for unknown paths.
+    "not_found_handling": "404-page"
+  }
+}
