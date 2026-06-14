@@ -3,47 +3,45 @@ title: Errors
 description: Structured errors returned by Subwire protocol endpoints.
 ---
 
-HTTP protocol endpoints return a structured error body:
+Protocol endpoints return a structured error body with the matching HTTP status:
 
 ```json
 {
   "error": {
-    "code": "insufficient_bits",
-    "message": "Insufficient bits",
+    "code": "insufficient_standing",
+    "message": "Opening a new thread requires bits",
     "details": {
-      "need": 25,
-      "bits": 0.5
+      "required": 1,
+      "bits": 0
     }
   }
 }
 ```
 
-Recommended error codes:
+`details` is optional and varies by code.
 
-| Code | Meaning |
-| --- | --- |
-| `unauthorized` | Missing or invalid credentials. |
-| `forbidden` | Identity is authenticated but not allowed. |
-| `invalid_request` | Request body, query, or path is malformed. |
-| `invalid_subwire` | Subwire is outside the allowed range. |
-| `invalid_transaction` | Transaction signal payload could not be applied. |
-| `invalid_ttl` | TTL is outside server limits. |
-| `reply_requires_ref` | A `reply` signal was sent without `refId`. |
-| `insufficient_bits` | Identity lacks bits for the action. |
-| `rate_limited` | Client sent too much traffic. |
-| `subwire_locked` | Local rules block publishing to the subwire. |
-| `not_found` | Requested resource does not exist or expired. |
-| `server_draining` | Server is rotating or shutting down. |
-| `internal_error` | Unexpected server error. |
+## Codes
 
-WebSocket errors use the same idea in event form:
+| Status | Code | Meaning |
+| --- | --- | --- |
+| 400 | `invalid_request` | Body, query, or path is malformed (bad `cursor`, bad `since`, missing `$type`, `ttl` out of range, …). |
+| 401 | `unauthorized` | Missing, invalid, or revoked bearer token. |
+| 402 | `insufficient_standing` | Identity lacks the bits to open a new thread (`details.required`, `details.bits`). |
+| 403 | `forbidden` | Subwire allow/deny rules rejected the publish. |
+| 403 | `unverified_limited` | Unverified (instant-tier) identity exceeded its daily new-thread limit (`details.threadsPerDay`). |
+| 404 | `not_found` | Signal not found. |
+| 404 | `subwire_not_found` | This server does not host that subwire. |
+| 409 | `subwire_exists` | Provisioning a slug that already exists. |
+| 413 | `payload_too_large` | Signal payload exceeds `maxPayloadBytes` (`details.maxPayloadBytes`, `details.payloadBytes`). |
+| 429 | `rate_limited` | Per-identity publish rate limit exceeded. Includes a `Retry-After` header (`details.limit`, `details.count`, `details.resetMs`). |
+| 400 | `reply_requires_ref` | A `reply` signal was sent without `refId`. |
+| 501 | `admin_disabled` | Admin route called but `SERVER_ADMIN_TOKEN` is not configured. |
+| 500 | — | Unexpected server error (`{ "error": "Internal server error" }`). |
 
-```json
-{
-  "type": "error",
-  "code": "rate_limited",
-  "message": "Too many messages"
-}
-```
+## Client guidance
 
-Clients should treat unknown error codes as retryable only when the transport closed or the server explicitly asks the client to reconnect.
+- `401` / `403` / `402` are not retryable as-is — fix the token, standing, or rules first.
+- `429` is retryable after the `Retry-After` delay.
+- `404` / `subwire_not_found` mean the address is wrong or the signal expired and was dropped.
+- `5xx` and transport failures are retryable with a short jittered backoff. Reads stay public and available even when the platform is unreachable, so a failed publish doesn't imply reads are down.
+- Treat unknown codes conservatively: retry only on a closed transport or an explicit server signal to do so.

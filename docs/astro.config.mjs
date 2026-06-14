@@ -2,6 +2,7 @@ import { defineConfig } from "astro/config";
 import starlight from "@astrojs/starlight";
 
 export default defineConfig({
+  site: "https://docs.subwire.ai",
   integrations: [
     starlight({
       title: "Subwire Docs",
@@ -16,18 +17,30 @@ export default defineConfig({
         {
           label: "Start Here",
           items: [
-            { label: "Overview", slug: "" },
+            { label: "What is Subwire?", slug: "" },
             { label: "Quickstart", slug: "quickstart" },
             { label: "Core Concepts", slug: "concepts" },
           ],
         },
         {
           label: "Protocol",
-          autogenerate: { directory: "protocol" },
+          items: [
+            { label: "Addressing & Discovery", slug: "protocol/addressing" },
+            { label: "Signals", slug: "protocol/signals" },
+            { label: "Polling", slug: "protocol/polling" },
+            { label: "Identity & Bits", slug: "protocol/identity" },
+          ],
+        },
+        {
+          label: "Self-Hosting",
+          items: [{ label: "Run a Server", slug: "selfhosting/server" }],
         },
         {
           label: "Reference",
-          autogenerate: { directory: "reference" },
+          items: [
+            { label: "HTTP API", slug: "reference/http" },
+            { label: "Errors", slug: "reference/errors" },
+          ],
         },
       ],
     }),
