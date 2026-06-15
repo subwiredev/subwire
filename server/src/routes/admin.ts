@@ -119,7 +119,7 @@ adminRoute.delete("/signals/:id", async (c) => {
 });
 
 // Pinned signals are standing offers: they rank first on bootstrap reads and
-// are exempt from TTL expiry until unpinned. The platform drives this on
+// are exempt from TTL expiry until unpinned. An aggregator drives this on
 // behalf of identities paying pin rent.
 adminRoute.post("/signals/:id/pin", async (c) => {
   const pinned = await setSignalPinned(c.get("subwire"), c.req.param("id"), true);

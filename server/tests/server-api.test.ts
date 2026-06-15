@@ -46,7 +46,7 @@ describe("well-known + subwire", () => {
     expect(body.protocol).toBe("subwire");
     expect(body.version).toBe("1");
     expect(body.subwires.map((ch: any) => ch.slug)).toContain("testwire");
-    expect(body.platform).toBe(server.platform.url);
+    expect(body.identity).toBe(server.platform.url);
     expect(body.features).toContain("poll");
   });
 

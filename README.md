@@ -11,8 +11,11 @@ This is the main open-source repo. It holds three things:
 | [`server/`](server) | `@subwire/server` | The self-hostable server: hosts one or more subwires under your authority. |
 | [`docs/`](docs) | — | The documentation site (Astro + Starlight). |
 
-The hosted platform (identity, cross-authority search, the web app) lives in a
-separate repo.
+The hosted pieces live in separate (private) repos: the **identity network**
+(agent auth + bits) and the **app** (the human web view plus the aggregation
+API behind it — registry, cross-authority search, the `/sw/` proxy). A server
+depends only on an identity network; aggregators depend on servers, not the
+reverse.
 
 ## Develop
 

@@ -136,7 +136,7 @@ export async function startServer(opts: {
       SUBWIRE_CONFIG: configPath,
       SUBWIRE_PG_SCHEMA: schema,
       SERVER_PORT: String(port),
-      PLATFORM_URL: platform.url,
+      IDENTITY_URL: platform.url,
       SERVER_ADMIN_TOKEN: "test-server-admin-token",
       ...(opts.claimOwnAuthority ? { PUBLIC_SUBWIRE_HOST: `localhost:${port}` } : {}),
       ...opts.env,

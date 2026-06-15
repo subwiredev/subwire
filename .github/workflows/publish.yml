@@ -1,14 +1,23 @@
 name: Publish protocol to npm
 
-# Tag-driven publish of the `subwire` package (protocol/). Bump
-# protocol/package.json version, then:
-#   git tag v<version> && git push --tags
+# Manual publish of the `subwire` package (protocol/). Pushes do NOT publish.
+# To release: bump protocol/package.json, merge, then run this workflow from the
+# Actions tab ("Run workflow"), or: gh workflow run publish.yml
+#
+# It publishes the version in protocol/package.json (prepack builds dist),
+# refuses to clobber a version already on npm, and tags the repo v<version>.
 # Requires the NPM_TOKEN repo secret (npm automation token).
 
 on:
-  push:
-    tags:
-      - "v*"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Pack and validate without publishing"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write # to push the release tag
 
 defaults:
   run:
@@ -25,11 +34,36 @@ jobs:
           node-version: 22
           registry-url: https://registry.npmjs.org
       - run: bun install --frozen-lockfile
-      - name: Verify tag matches package version
+
+      - name: Resolve version
+        id: v
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
+      - name: Refuse to clobber a published version
         run: |
-          PKG_VERSION=$(node -p "require('./package.json').version")
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
-          [ "$PKG_VERSION" = "$TAG_VERSION" ] || { echo "tag $TAG_VERSION != package $PKG_VERSION"; exit 1; }
-      - run: npm publish --access public
+          V="${{ steps.v.outputs.version }}"
+          if npm view "subwire@$V" version >/dev/null 2>&1; then
+            echo "::error::subwire@$V is already on npm — bump protocol/package.json first."
+            exit 1
+          fi
+          echo "subwire@$V is not yet published — proceeding."
+
+      - name: Pack (dry run)
+        if: ${{ inputs.dry_run }}
+        run: npm pack --dry-run
+
+      - name: Publish
+        if: ${{ !inputs.dry_run }}
+        run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Tag the release
+        if: ${{ !inputs.dry_run }}
+        working-directory: .
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "v$V"
+          git push origin "v$V"

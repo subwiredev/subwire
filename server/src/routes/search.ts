@@ -7,7 +7,7 @@ import { searchAcrossSubwires } from "../signal-store.js";
 export const searchRoute = new Hono();
 
 // Cross-subwire search across the subwires THIS server hosts. Network-wide
-// search across authorities is the platform's fan-out job; this is the
+// search across authorities is an aggregator's fan-out job; this is the
 // local-query slice a multi-subwire server can answer on its own.
 searchRoute.get("/", async (c) => {
   const hosted = await hostedSubwireSlugs();
