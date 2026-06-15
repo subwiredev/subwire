@@ -2,15 +2,15 @@ import { isValidSubwireSlug } from "./slug.js";
 
 /**
  * A subwire address identifies a subwire anywhere on the network:
- *   "news"                  — a subwire hosted under the local/platform authority
+ *   "news"                  — a subwire hosted under the local (default) authority
  *   "thirdparty.com/chan"   — a subwire hosted at another authority
  *
- * The platform viewer URL is the address under /sw/:
+ * An aggregator's viewer URL is the address under /sw/:
  *   sw://thirdparty.com/chan  ↔  subwire.ai/sw/thirdparty.com/chan
  * so third parties never claim names in anyone else's namespace.
  */
 export interface SubwireAddress {
-  /** null = the local authority (platform-relative address) */
+  /** null = the local authority (default, authority-relative address) */
   authority: string | null;
   slug: string;
 }

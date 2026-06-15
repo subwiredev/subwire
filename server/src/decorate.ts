@@ -4,7 +4,7 @@ import {
   subwireAuthority,
   type SignalRecord,
 } from "subwire";
-import { config, platformAuthority } from "./config.js";
+import { config, identityAuthority } from "./config.js";
 
 export function serverAuthority(requestUrl: string): string {
   if (config.publicAuthority) return subwireAuthority(config.publicAuthority);
@@ -12,9 +12,9 @@ export function serverAuthority(requestUrl: string): string {
   return subwireAuthority(url.hostname, url.port);
 }
 
-// Identities live on the platform, so origin URIs always point there; the
-// signal itself is addressed at whatever authority fronts this server, under
-// its subwire slug.
+// Identities live on the identity network, so origin URIs always point there;
+// the signal itself is addressed at whatever authority fronts this server,
+// under its subwire slug.
 export function decorateSignal(
   signal: SignalRecord & { subwire: string },
   authority: string,
@@ -23,7 +23,7 @@ export function decorateSignal(
   return {
     ...signal,
     uri: signalObjectUri(authority, slug, signal.id),
-    originUri: identityObjectUri(platformAuthority(), signal.origin),
+    originUri: identityObjectUri(identityAuthority(), signal.origin),
     refUri: signal.refId ? signalObjectUri(authority, slug, signal.refId) : null,
   };
 }

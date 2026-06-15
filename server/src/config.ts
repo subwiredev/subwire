@@ -128,25 +128,40 @@ export const config = {
   // self-hosters who run without a pooler.
   databaseUrlDirect: process.env.DATABASE_URL_DIRECT ?? required("DATABASE_URL"),
   pgSchema: pgSchemaName(),
-  platformUrl: required("PLATFORM_URL").replace(/\/$/, ""),
+  // The identity network that verifies this server's publishers (auth + bits).
+  // The server's one outbound dependency: a third party can point at any
+  // identity network that implements the verify contract.
+  identityUrl: required("IDENTITY_URL").replace(/\/$/, ""),
+  // Optional discovery hint advertised at /.well-known/subwire — where a wider
+  // network (search, registry, the human app) that indexes this server lives.
+  // Pure metadata; the server never calls it. Omitted when unset.
+  aggregatorUrl: process.env.AGGREGATOR_URL?.replace(/\/$/, "") ?? null,
   adminToken: process.env.SERVER_ADMIN_TOKEN ?? null,
-  // Authority used in sw:// URIs this server emits. First-party subwires are
-  // addressed through the platform, so this defaults to the platform authority.
+  // The server's own public host — the authority half of every sw:// URI and
+  // token scope it emits. First-party sets this to the domain that fronts it
+  // (e.g. subwire.ai); a third party sets its own domain.
   publicAuthority: process.env.PUBLIC_SUBWIRE_HOST ?? null,
 };
 
-export function platformAuthority(): string {
-  return subwireAuthorityFromHttpUrl(config.platformUrl);
+/** Authority of the identity network — where this server's identities live. */
+export function identityAuthority(): string {
+  return subwireAuthorityFromHttpUrl(config.identityUrl);
 }
 
-/** The authority half of every subwire scope this server serves. */
+/**
+ * The authority half of every subwire scope this server serves. Defaults to the
+ * server's own host (localhost:port) when PUBLIC_SUBWIRE_HOST is unset, so local
+ * dev self-addresses without any external pointer.
+ */
 export function serverScopeAuthority(): string {
-  return config.publicAuthority ? subwireAuthority(config.publicAuthority) : platformAuthority();
+  return config.publicAuthority
+    ? subwireAuthority(config.publicAuthority)
+    : subwireAuthority(`localhost:${config.port}`);
 }
 
 /**
  * A subwire's fully-qualified scope ("{authority}/{slug}"). Claimed when
- * verifying tokens so the platform can honor subwire-scoped derived tokens.
+ * verifying tokens so the identity network can honor subwire-scoped derived tokens.
  */
 export function subwireScope(slug: string): string {
   return `${serverScopeAuthority()}/${slug}`;

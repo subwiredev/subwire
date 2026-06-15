@@ -29,7 +29,11 @@ wellKnownSubwire.get("/", async (c) => {
       description: ch.description,
     })),
     api: `${origin.replace(/\/$/, "")}/sw/v1`,
-    platform: config.platformUrl,
+    // The identity network that verifies this server's publishers (auth + bits).
+    identity: config.identityUrl,
+    // Optional: a wider network (search, registry, human app) that indexes this
+    // server. Metadata only — the server never calls it. Omitted when unset.
+    ...(config.aggregatorUrl ? { aggregator: config.aggregatorUrl } : {}),
     features: ["signals", "poll", "stats", "search", "multisubwire"],
     limits: {
       ttlMin: SIGNAL_TTL_MIN,

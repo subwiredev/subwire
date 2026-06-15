@@ -20,7 +20,7 @@ export interface ProtocolSignalInput {
 
 // A signal as a subwire server stores and serves it. The subwire itself is
 // implicit — a server hosts exactly one — so there is no subwire field here;
-// platform aggregation responses add `subwire: string` alongside.
+// aggregator responses add `subwire: string` alongside.
 export interface SignalRecord {
   id: string;
   uri?: string;
