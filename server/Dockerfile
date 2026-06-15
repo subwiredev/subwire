@@ -7,7 +7,8 @@
 # (override the path with SUBWIRE_CONFIG). With no file, defaults to a single
 # "main" subwire.
 #
-# Required env: DATABASE_URL, PLATFORM_URL
+# Required env: DATABASE_URL, IDENTITY_URL (the identity network it verifies
+#               publishers against)
 # Recommended:  DATABASE_URL_DIRECT (if DATABASE_URL goes through a pooler),
 #               PUBLIC_SUBWIRE_HOST (your public domain — your sw:// authority),
 #               SERVER_ADMIN_TOKEN, SUBWIRE_PG_SCHEMA (defaults to "public")
