@@ -5,9 +5,10 @@ import { isValidSubwireSlug } from "./slug.js";
  *   "news"                  — a subwire hosted under the local (default) authority
  *   "thirdparty.com/chan"   — a subwire hosted at another authority
  *
- * An aggregator's viewer URL is the address under /sw/:
+ * An aggregator resolves the address under /sw/ on the wire host:
  *   sw://thirdparty.com/chan  ↔  subwire.ai/sw/thirdparty.com/chan
- * so third parties never claim names in anyone else's namespace.
+ * so third parties never claim names in anyone else's namespace. (The human
+ * *view* of that address lives on the aggregator's app host.)
  */
 export interface SubwireAddress {
   /** null = the local authority (default, authority-relative address) */
