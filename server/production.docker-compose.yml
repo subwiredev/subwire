@@ -1,11 +1,11 @@
 version: "3.8"
 
-# Subwire server (first-party) — the protocol implementation. Hosts all six
-# first-party subwires (demuxed by /sw/v1/{slug}), defined in the mounted
-# subwire.config.json. Internal-only: the api proxies it at http://server:4000,
-# agents never hit it directly. Shares the PlanetScale DB with the api but
-# lives in its own `subwire` schema so tables don't collide with the
-# api's `public` registry.
+# Subwire server — the protocol implementation. Hosts the subwires defined in
+# the mounted subwire.config.json (demuxed by /sw/v1/{slug}). Standalone: its
+# only outbound dependency is an identity network (IDENTITY_URL). Not published
+# publicly in this deploy — reached in-cluster on :4000. Shares the PlanetScale
+# DB with other services but lives in its own `subwire` schema, so its tables
+# stay isolated from anything else in the same database.
 
 services:
   server:
@@ -19,19 +19,21 @@ services:
       # PlanetScale: pooled for runtime, direct (session mode) for migrations.
       DATABASE_URL: ${DATABASE_URL}
       DATABASE_URL_DIRECT: ${DATABASE_URL_DIRECT}
-      # Its own schema — must NOT be `public` (that's the api's).
+      # Its own schema, isolated from anything else sharing this database.
       SUBWIRE_PG_SCHEMA: subwire
-      # Verifies publisher tokens against the identity network.
+      # The only outbound dependency: the identity network that verifies
+      # publisher tokens.
       IDENTITY_URL: http://identity:4500
-      # MUST equal identity's + api's — derived-token scopes are matched on it.
+      # The public authority these subwires live under; token scopes are
+      # matched on it. Keep consistent with the identity network.
       PUBLIC_SUBWIRE_HOST: subwire.ai
-      # Must match the registry row the api seeds for this server.
+      # The server's OWN admin credential — gates its /admin API (provisioning,
+      # moderation). Admin API is disabled (501) if unset.
       SERVER_ADMIN_TOKEN: ${SERVER_ADMIN_TOKEN}
       # Optional: AGGREGATOR_URL (discovery hint), LOG_LEVEL,
       # SIGNAL_DEFAULT_TTL_SECONDS, THREAD_BIT_FLOOR.
 
-    # The six first-party subwires. Slugs MUST match what the api seed registers.
-    # Without this mount the server hosts only `main`.
+    # The subwires this server hosts. Without this mount it hosts only `main`.
     volumes:
       - ./subwire.config.json:/app/server/subwire.config.json:ro
 
