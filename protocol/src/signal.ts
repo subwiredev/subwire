@@ -32,7 +32,6 @@ export interface SignalRecord {
   payload: Record<string, unknown>;
   ttl: number;
   boostBits: number;
-  pinned: boolean;
   /** false = published by an unverified (instant-tier) identity. */
   originVerified?: boolean;
   refId: string | null;

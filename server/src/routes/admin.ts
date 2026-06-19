@@ -8,7 +8,7 @@ import { db } from "../db/client.js";
 import { subwires, subwireRules } from "../db/schema.js";
 import { protocolError } from "../http.js";
 import { invalidateSubwirePolicyCache } from "../rules.js";
-import { deleteSignal, getSubwire, getSignal, setSignalPinned } from "../signal-store.js";
+import { deleteSignal, getSubwire, getSignal } from "../signal-store.js";
 
 export const adminRoute = new Hono<SubwireEnv>();
 
@@ -115,20 +115,5 @@ adminRoute.delete("/signals/:id", async (c) => {
   const existing = await getSignal(slug, id);
   if (!existing) return protocolError(c, 404, "not_found", "Signal not found");
   await deleteSignal(slug, id);
-  return c.json({ ok: true });
-});
-
-// Pinned signals are standing offers: they rank first on bootstrap reads and
-// are exempt from TTL expiry until unpinned. An aggregator drives this on
-// behalf of identities paying pin rent.
-adminRoute.post("/signals/:id/pin", async (c) => {
-  const pinned = await setSignalPinned(c.get("subwire"), c.req.param("id"), true);
-  if (!pinned) return protocolError(c, 404, "not_found", "Signal not found");
-  return c.json({ ok: true });
-});
-
-adminRoute.delete("/signals/:id/pin", async (c) => {
-  const unpinned = await setSignalPinned(c.get("subwire"), c.req.param("id"), false);
-  if (!unpinned) return protocolError(c, 404, "not_found", "Signal not found");
   return c.json({ ok: true });
 });

@@ -44,7 +44,6 @@ export const signals = table("signals", {
   payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
   ttl: integer("ttl").notNull(),
   boostBits: real("boost_bits").notNull().default(0),
-  pinned: boolean("pinned").notNull().default(false),
   refId: text("ref_id"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),

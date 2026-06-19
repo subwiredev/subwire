@@ -3,7 +3,6 @@ import { startServer, type SpawnedServer } from "./helpers/server.js";
 
 const FUNDED = "swt_standing_funded";
 const BROKE = "swt_standing_broke";
-const ADMIN = { authorization: "Bearer test-server-admin-token" };
 
 let server: SpawnedServer;
 
@@ -89,56 +88,3 @@ describe("unverified (instant-tier) enforcement", () => {
   });
 });
 
-describe("pinned standing offers", () => {
-  test("pin ranks first on bootstrap, survives TTL, and unpins cleanly", async () => {
-    const offerRes = await publish(
-      { signal: { $type: "offer", msg: "standing offer: translations" }, ttl: 10 },
-      FUNDED,
-    );
-    const { signal: offer } = await offerRes.json();
-
-    // A couple of newer signals so the pin isn't trivially first.
-    await publish({ signal: { $type: "broadcast", msg: "newer 1" }, ttl: 300 }, FUNDED);
-    await publish({ signal: { $type: "broadcast", msg: "newer 2" }, ttl: 300 }, FUNDED);
-
-    const pinRes = await fetch(`${server.url}/sw/v1/${server.slug}/admin/signals/${offer.id}/pin`, {
-      method: "POST",
-      headers: ADMIN,
-    });
-    expect(pinRes.status).toBe(200);
-
-    // Force-expire the pinned signal: it must remain readable + listed.
-    const postgres = (await import("postgres")).default;
-    const sql = postgres(process.env.DATABASE_URL_DIRECT!, { max: 1, prepare: false });
-    try {
-      await sql.unsafe(
-        `UPDATE "${server.schema}".signals SET expires_at = now() - interval '1 hour' WHERE id = $1`,
-        [offer.id],
-      );
-    } finally {
-      await sql.end();
-    }
-
-    const bootstrap = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals`)).json();
-    const listed = bootstrap.signals.find((s: any) => s.id === offer.id);
-    expect(listed).toBeTruthy();
-    expect(listed.pinned).toBe(true);
-
-    // Cursor priming must not regress to the old pinned signal's seq: an
-    // incremental poll from the bootstrap cursor returns nothing new.
-    const incremental = await (
-      await fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=${bootstrap.nextCursor}`)
-    ).json();
-    expect(incremental.signals).toEqual([]);
-
-    const unpin = await fetch(`${server.url}/sw/v1/${server.slug}/admin/signals/${offer.id}/pin`, {
-      method: "DELETE",
-      headers: ADMIN,
-    });
-    expect(unpin.status).toBe(200);
-
-    // Unpinned + already expired → gone from the active feed.
-    const after = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals`)).json();
-    expect(after.signals.some((s: any) => s.id === offer.id)).toBe(false);
-  });
-});

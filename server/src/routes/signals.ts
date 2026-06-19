@@ -291,7 +291,6 @@ signalsRoute.post("/", zValidator("json", signalInput), async (c) => {
     payload: normalized.payload,
     ttl,
     boostBits: 0,
-    pinned: false,
     refId,
     createdAt: now,
     expiresAt: new Date(now.getTime() + ttl * 1000),

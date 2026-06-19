@@ -54,7 +54,6 @@ function rowToSignal(row: SignalRow): SignalRecord & { subwire: string } {
     payload: row.payload,
     ttl: row.ttl,
     boostBits: row.boostBits,
-    pinned: row.pinned,
     refId: row.refId ?? null,
     createdAt: row.createdAt,
     expiresAt: row.expiresAt,
@@ -66,9 +65,8 @@ function sortOldestFirst(a: SignalRecord, b: SignalRecord): number {
 }
 
 function activeFilter(includeExpired?: boolean) {
-  // Pinned signals (standing offers) stay live past their TTL until unpinned.
   if (includeExpired) return undefined;
-  return or(gt(signals.expiresAt, sql`now()`), eq(signals.pinned, true))!;
+  return gt(signals.expiresAt, sql`now()`);
 }
 
 function textMatch(q: string) {
@@ -142,7 +140,6 @@ export async function upsertSignal(signal: StoredSignal): Promise<void> {
     payload: signal.payload,
     ttl: signal.ttl,
     boostBits: signal.boostBits,
-    pinned: signal.pinned,
     refId: signal.refId,
     createdAt: signal.createdAt,
     expiresAt: signal.expiresAt,
@@ -174,20 +171,17 @@ export async function listActiveSignals(query: SignalSearchQuery): Promise<Signa
     return { signals: rows.map(rowToSignal), nextCursor };
   }
 
-  // Bootstrap page surfaces standing offers first; cursor-incremental reads
-  // stay pure seq order (pins of old signals appear on bootstrap only).
+  // Bootstrap page: newest first by insertion order.
   const rows = await db
     .select()
     .from(signals)
     .where(and(...conditions))
-    .orderBy(desc(signals.pinned), desc(signals.seq))
+    .orderBy(desc(signals.seq))
     .limit(limit);
 
   let nextCursor: string;
   if (rows.length > 0) {
-    // Max across the page, not rows[0] — pinned-first ordering can put an
-    // old (low-seq) standing offer at the head of the page.
-    nextCursor = String(Math.max(...rows.map((row) => row.seq)));
+    nextCursor = String(rows[0].seq);
   } else {
     const [row] = await db
       .select({ seq: max(signals.seq) })
@@ -215,7 +209,7 @@ export async function searchAcrossSubwires(
     .select()
     .from(signals)
     .where(and(...conditions))
-    .orderBy(desc(signals.pinned), desc(signals.createdAt), signals.id)
+    .orderBy(desc(signals.createdAt), signals.id)
     .limit(limit);
   return rows.map(rowToSignal);
 }
@@ -245,28 +239,13 @@ export async function deleteSignal(subwire: string, id: string): Promise<void> {
   await db.delete(signals).where(and(eq(signals.subwire, subwire), eq(signals.id, id)));
 }
 
-/** Removes signals that expired more than `graceSeconds` ago. Pinned signals are exempt. */
+/** Removes signals that expired more than `graceSeconds` ago. */
 export async function sweepExpiredSignals(graceSeconds: number): Promise<number> {
   const result = await db
     .delete(signals)
-    .where(
-      and(
-        lte(signals.expiresAt, sql`now() - make_interval(secs => ${graceSeconds})`),
-        eq(signals.pinned, false),
-      ),
-    )
+    .where(lte(signals.expiresAt, sql`now() - make_interval(secs => ${graceSeconds})`))
     .returning({ id: signals.id });
   return result.length;
-}
-
-/** Pin/unpin a signal. Returns false if the signal doesn't exist on the subwire. */
-export async function setSignalPinned(subwire: string, id: string, pinned: boolean): Promise<boolean> {
-  const rows = await db
-    .update(signals)
-    .set({ pinned })
-    .where(and(eq(signals.subwire, subwire), eq(signals.id, id)))
-    .returning({ id: signals.id });
-  return rows.length > 0;
 }
 
 /** New threads (root signals) opened by an origin on a subwire in the last 24h. */
