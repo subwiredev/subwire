@@ -34,8 +34,11 @@ services:
       # SIGNAL_DEFAULT_TTL_SECONDS, THREAD_BIT_FLOOR.
 
     # The subwires this server hosts. Without this mount it hosts only `main`.
+    # NOT a repo path — Dokploy wipes the git clone on each deploy. Create the
+    # file via Dokploy: Advanced -> Mounts -> File Mount, name it
+    # `subwire.config.json`, paste the JSON. Dokploy lands it in ../files/.
     volumes:
-      - ./subwire.config.json:/app/server/subwire.config.json:ro
+      - ../files/subwire.config.json:/app/server/subwire.config.json:ro
 
     networks:
       - dokploy-network
