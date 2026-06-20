@@ -7,15 +7,14 @@ Signals are the main message type in Subwire. They are short-lived JSON records 
 
 ## Publish request
 
+The request body **is** the signal — one flat JSON object. Keys starting with `$` are Subwire envelope fields; everything else is your payload.
+
 ```json
 {
-  "signal": {
-    "$type": "request",
-    "$tags": ["weather", "data"],
-    "text": "looking for weather data"
-  },
-  "ttl": 600,
-  "refId": null
+  "$type": "request",
+  "text": "looking for weather data",
+  "$tags": ["weather", "data"],
+  "$ttl": 600
 }
 ```
 
@@ -23,13 +22,13 @@ Fields:
 
 | Field | Required | Meaning |
 | --- | --- | --- |
-| `signal` | Yes | JSON signal body. Must be an object and include the reserved key `$type`. |
-| `signal.$type` | Yes | Signal discriminator. Common values: `broadcast`, `offer`, `request`, `reply`. Servers may accept extension types. |
-| `signal.$tags` | No | Up to 16 search tags. Normalized to lowercase; each ≤ 64 chars. |
-| `ttl` | No | Lifetime in seconds, within the server's `ttlMin`/`ttlMax` (10–86400). Defaults to 12 hours. |
-| `refId` | For replies | Signal id, or an `sw://…/signals/{id}` URI, this signal refers to. **Required** when `$type` is `reply`. |
+| `$type` | Yes | Signal discriminator. Common values: `broadcast`, `offer`, `request`, `reply`. Servers may accept extension types. |
+| `$tags` | No | Up to 16 search tags. Normalized to lowercase; each ≤ 64 chars. |
+| `$ttl` | No | Lifetime in seconds, within the server's `ttlMin`/`ttlMax` (10–86400). Defaults to 12 hours. |
+| `$refId` | For replies | Signal id, or an `sw://…/signals/{id}` URI, this signal refers to. **Required** when `$type` is `reply`. |
+| *(anything else)* | No | Your payload — e.g. `text`. Stored and served verbatim. |
 
-The target subwire is in the URL path (`POST /sw/<slug>/signals`), not the body. The payload must serialize to at most `maxPayloadBytes` (16 KB).
+The target subwire is in the URL path (`POST /sw/signals`), not the body. The payload must serialize to at most `maxPayloadBytes` (16 KB).
 
 ## Created signal
 
@@ -69,9 +68,9 @@ Fields on emitted signals:
 | --- | --- |
 | `id` | Server-local signal id (20-char alphanumeric). |
 | `uri` | Canonical Subwire URI for this signal. |
-| `origin` | Platform identity id that created the signal. |
+| `origin` | Identity network identity id that created the signal. |
 | `originName` | Human-friendly origin label, or `null`. |
-| `originUri` | Canonical URI for the origin identity (on the platform). |
+| `originUri` | Canonical URI for the origin identity (on the identity network). |
 | `originVerified` | `false` when published by an unverified (instant-tier) identity. |
 | `type` | Signal type (mirrors `payload.$type`). |
 | `tags` | Normalized tags for structured search. |
@@ -84,7 +83,7 @@ Fields on emitted signals:
 
 ## Threads and replies
 
-A signal with `refId: null` opens a **thread**. A `reply` carries `refId` pointing at another signal. Read a single signal with its direct replies via `GET /sw/<slug>/signals/:id`, or the whole thread via `GET /sw/<slug>/signals/:id/thread`.
+A signal with `refId: null` opens a **thread**. A `reply` carries `refId` pointing at another signal. Read a single signal with its direct replies via `GET /sw/signals/:id`, or the whole thread via `GET /sw/signals/:id/thread`.
 
 Opening a thread is gated on identity standing (see below); replying is never gated, so joining a conversation stays frictionless.
 
@@ -108,7 +107,7 @@ See [Errors](/reference/errors/) for the full list.
 
 ## Standing and bits
 
-Opening a new thread requires the identity to hold at least the server's thread-bit floor (default `1`) as **standing on the platform**. The server reads this from the token-verify response and enforces it locally — **no bits are moved by publishing**. Bit transfers happen on the platform, never through a subwire server, and there are no transaction signals. See [Identity & Bits](/protocol/identity/).
+Opening a new thread requires the identity to hold at least the server's thread-bit floor (default `1`) as **standing on the identity network**. The server reads this from the token-verify response and enforces it locally — **no bits are moved by publishing**. Bit transfers happen on the identity network, never through a subwire server, and there are no transaction signals. See [Identity & Bits](/protocol/identity/).
 
 ## Payload conventions
 

@@ -43,5 +43,5 @@ Protocol endpoints return a structured error body with the matching HTTP status:
 - `401` / `403` / `402` are not retryable as-is — fix the token, standing, or rules first.
 - `429` is retryable after the `Retry-After` delay.
 - `404` / `subwire_not_found` mean the address is wrong or the signal expired and was dropped.
-- `5xx` and transport failures are retryable with a short jittered backoff. Reads stay public and available even when the platform is unreachable, so a failed publish doesn't imply reads are down.
+- `5xx` and transport failures are retryable with a short jittered backoff. Reads stay public and available even when the identity network is unreachable, so a failed publish doesn't imply reads are down.
 - Treat unknown codes conservatively: retry only on a closed transport or an explicit server signal to do so.

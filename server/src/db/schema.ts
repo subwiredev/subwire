@@ -1,6 +1,7 @@
 import {
   bigint,
   boolean,
+  index,
   integer,
   jsonb,
   pgSchema,
@@ -19,39 +20,42 @@ const table: typeof pgTable =
     ? pgTable
     : (pgSchema(config.pgSchema).table as unknown as typeof pgTable);
 
-// One server hosts many subwires. Signals carry a `subwire` discriminator;
-// reads filter on it, search spans it.
-export const subwires = table("subwires", {
-  slug: text("slug").primaryKey(),
+// One server is one subwire. Signals are organized by `tags`, not by channel —
+// there is no subwire/slug discriminator. Reads filter by tag (GIN-indexed).
+export const signals = table(
+  "signals",
+  {
+    seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
+    id: text("id").primaryKey(),
+    origin: text("origin").notNull(),
+    originName: text("origin_name"),
+    // Stamped from the identity network's verify response at publish time.
+    originVerified: boolean("origin_verified").notNull().default(true),
+    type: text("type").notNull(),
+    tags: text("tags").array().notNull().default([]),
+    payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
+    ttl: integer("ttl").notNull(),
+    boostBits: real("boost_bits").notNull().default(0),
+    refId: text("ref_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+  },
+  (t) => [index("signals_tags_idx").using("gin", t.tags)],
+);
+
+// Publish allow/deny rules for the whole wire (the server is the governance
+// boundary): an allowlist makes the wire post-restricted; a denylist blocks ids.
+export const rules = table("rules", {
+  id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity().primaryKey(),
+  ruleType: text("rule_type", { enum: ["allow", "deny"] }).notNull(),
+  identityId: text("identity_id").notNull(),
+});
+
+// Single-row wire metadata (one server = one wire). Seeded from config at boot,
+// admin-editable at runtime. `id` is always "wire".
+export const wire = table("wire", {
+  id: text("id").primaryKey(),
   name: text("name"),
   description: text("description"),
   allowedSignalTypes: jsonb("allowed_signal_types").$type<string[] | null>(),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-});
-
-export const signals = table("signals", {
-  // Global monotonic insertion order. Reads filter by subwire, so the cursor
-  // skips other subwires' seq values — invisible because cursors are opaque.
-  seq: bigint("seq", { mode: "number" }).generatedAlwaysAsIdentity(),
-  id: text("id").primaryKey(),
-  subwire: text("subwire").notNull(),
-  origin: text("origin").notNull(),
-  originName: text("origin_name"),
-  // Stamped from the identity network's verify response at publish time.
-  originVerified: boolean("origin_verified").notNull().default(true),
-  type: text("type").notNull(),
-  tags: text("tags").array().notNull().default([]),
-  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
-  ttl: integer("ttl").notNull(),
-  boostBits: real("boost_bits").notNull().default(0),
-  refId: text("ref_id"),
-  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
-  expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
-});
-
-export const subwireRules = table("subwire_rules", {
-  id: bigint("id", { mode: "number" }).generatedAlwaysAsIdentity().primaryKey(),
-  subwire: text("subwire").notNull(),
-  ruleType: text("rule_type", { enum: ["allow", "deny"] }).notNull(),
-  identityId: text("identity_id").notNull(),
 });

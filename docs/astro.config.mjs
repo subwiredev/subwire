@@ -32,6 +32,10 @@ export default defineConfig({
           ],
         },
         {
+          label: "Integrations",
+          items: [{ label: "MCP & A2A", slug: "integrations/a2a" }],
+        },
+        {
           label: "Self-Hosting",
           items: [{ label: "Run a Server", slug: "selfhosting/server" }],
         },

@@ -2,8 +2,8 @@
  * Schema-scoped migration runner. drizzle-kit can't parameterize schema names,
  * so the server applies plain SQL files with search_path pinned to the
  * server's schema. Runs over a direct (session-mode) connection — never
- * through a transaction-mode pooler. Also ensures the config-declared
- * subwires exist (more can be added at runtime via the provisioning API).
+ * through a transaction-mode pooler. Also seeds the single wire's metadata and
+ * config-declared publish rules.
  */
 import { readdirSync, readFileSync } from "node:fs";
 import { resolve } from "node:path";
@@ -38,31 +38,31 @@ export async function migrate(): Promise<void> {
       await sql.unsafe(`INSERT INTO _migrations (name) VALUES ($1)`, [file]);
     }
 
-    // Ensure config-declared subwires exist. Name/description are
-    // admin-editable, so only seed them on first insert.
-    for (const subwire of config.subwires) {
-      await sql.unsafe(
-        `INSERT INTO subwires (slug, name, description)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (slug) DO NOTHING`,
-        [subwire.slug, subwire.name ?? subwire.slug, subwire.description],
-      );
+    // Seed the single wire's metadata (admin-editable, so only on first insert).
+    await sql.unsafe(
+      `INSERT INTO wire (id, name, description, allowed_signal_types)
+       VALUES ('wire', $1, $2, $3)
+       ON CONFLICT (id) DO NOTHING`,
+      [
+        config.wire.name,
+        config.wire.description,
+        config.wire.allowedSignalTypes ? JSON.stringify(config.wire.allowedSignalTypes) : null,
+      ],
+    );
 
-      // Seed config-declared publish allow/block lists. Idempotent: the
-      // UNIQUE(subwire, rule_type, identity_id) constraint makes re-seeding a
-      // no-op, and runtime rules added via the admin API are left untouched.
-      const rules: Array<[string, string]> = [
-        ...subwire.allow.map((id) => ["allow", id] as [string, string]),
-        ...subwire.block.map((id) => ["deny", id] as [string, string]),
-      ];
-      for (const [ruleType, identityId] of rules) {
-        await sql.unsafe(
-          `INSERT INTO subwire_rules (subwire, rule_type, identity_id)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (subwire, rule_type, identity_id) DO NOTHING`,
-          [subwire.slug, ruleType, identityId],
-        );
-      }
+    // Seed config-declared publish allow/block lists. Idempotent: the
+    // UNIQUE(rule_type, identity_id) constraint makes re-seeding a no-op, and
+    // runtime rules added via the admin API are left untouched.
+    const ruleSeeds: Array<[string, string]> = [
+      ...config.wire.allow.map((id) => ["allow", id] as [string, string]),
+      ...config.wire.block.map((id) => ["deny", id] as [string, string]),
+    ];
+    for (const [ruleType, identityId] of ruleSeeds) {
+      await sql.unsafe(
+        `INSERT INTO rules (rule_type, identity_id) VALUES ($1, $2)
+         ON CONFLICT (rule_type, identity_id) DO NOTHING`,
+        [ruleType, identityId],
+      );
     }
   } finally {
     await sql.end();
@@ -71,7 +71,5 @@ export async function migrate(): Promise<void> {
 
 if (import.meta.main) {
   await migrate();
-  console.log(
-    `migrated schema "${config.pgSchema}"; subwires: ${config.subwires.map((c) => c.slug).join(", ")}`,
-  );
+  console.log(`migrated schema "${config.pgSchema}"`);
 }

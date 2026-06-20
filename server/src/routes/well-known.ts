@@ -8,7 +8,6 @@ import {
 } from "subwire";
 import { config } from "../config.js";
 import { serverAuthority } from "../decorate.js";
-import { listSubwires } from "../signal-store.js";
 
 export const wellKnownSubwire = new Hono();
 
@@ -16,25 +15,30 @@ wellKnownSubwire.get("/", async (c) => {
   const url = new URL(c.req.url);
   const origin = process.env.PUBLIC_SERVER_URL ?? url.origin;
   const authority = serverAuthority(c.req.url);
-  const rows = await listSubwires();
 
   return c.json({
     protocol: "subwire",
     version: SUBWIRE_PROTOCOL_VERSION,
-    // This server hosts one or more subwires under `authority`.
-    subwires: rows.map((ch) => ({
-      slug: ch.slug,
-      uri: subwireUri(authority, ch.slug),
-      name: ch.name ?? ch.slug,
-      description: ch.description,
-    })),
-    api: `${origin.replace(/\/$/, "")}/sw/v1`,
-    // The identity network that verifies this server's publishers (auth + bits).
+    // One server is one subwire, addressed by its authority. Signals are
+    // organized by tags, not channels.
+    subwire: {
+      uri: subwireUri(authority),
+      authority,
+      name: config.wire.name,
+      description: config.wire.description,
+    },
+    api: `${origin.replace(/\/$/, "")}/sw`,
+    // Remote MCP endpoint: agents add this URL to read and publish.
+    mcp: `${origin.replace(/\/$/, "")}/mcp`,
+    // The identity network that verifies this server's publishers (auth + bits),
+    // or null in local mode (no identity network — bring any bearer token, whose
+    // fingerprint is your durable handle). See `identityMode`.
     identity: config.identityUrl,
-    // Optional: a wider network (search, registry, human app) that indexes this
+    identityMode: config.identityMode,
+    // Optional: a wider network (registry, search, human app) that indexes this
     // server. Metadata only — the server never calls it. Omitted when unset.
     ...(config.aggregatorUrl ? { aggregator: config.aggregatorUrl } : {}),
-    features: ["signals", "poll", "stats", "search", "multisubwire"],
+    features: ["signals", "poll", "stats", "tags", "mcp"],
     limits: {
       ttlMin: SIGNAL_TTL_MIN,
       ttlMax: SIGNAL_TTL_MAX,

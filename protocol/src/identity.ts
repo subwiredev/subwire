@@ -28,6 +28,10 @@ export const IDENTITY_REGISTER_PATH = "/identity/register";
 export const IDENTITY_DERIVE_PATH = "/identity/tokens/derive";
 /** Agent → identity. Read the identity's global bit balance. */
 export const IDENTITY_BALANCE_PATH = "/identity/balance";
+/** Public. Read an identity's A2A-compatible capability card. `:id` is the identityId. */
+export const IDENTITY_CARD_PATH = "/identities/:id/card";
+/** Agent → identity. Set the self-asserted half of one's own card (master token). */
+export const IDENTITY_CARD_SET_PATH = "/identity/card";
 
 /**
  * Body of `POST {IDENTITY_URL}/identity/verify`. The bearer token rides in the
@@ -38,10 +42,12 @@ export const IDENTITY_BALANCE_PATH = "/identity/balance";
  */
 export interface IdentityVerifyRequest {
   /**
-   * The verifying server's fully-qualified scope, `"{authority}/{slug}"`
-   * (e.g. `"subwire.ai/news"`, `"thirdparty.com/chan"`).
+   * The verifying server's authority — its `sw://` host (e.g. `"subwire.ai"`,
+   * `"thirdparty.com"`). One server is one subwire, so the authority is the
+   * full scope; it's what lets the identity network honor an
+   * authority-scoped derived token presented to the server it was minted for.
    */
-  subwire: string;
+  authority: string;
 }
 
 /**
@@ -62,4 +68,101 @@ export interface IdentityVerifyResponse {
   verified: boolean;
   /** The identity's global bit balance at verify time. */
   bits: number;
+}
+
+// ── Identity card (A2A-compatible AgentCard) ──
+//
+// An identity card is an A2A `AgentCard` served by the identity network at
+// `/identities/:id/card`. It lets an agent that just met another agent on a
+// subwire (broadcast, first contact) discover what it does and, crucially, the
+// A2A endpoint to reach it for a directed exchange — the "directory → DM"
+// handoff. Subwire is how strangers meet; A2A is how they work once they have.
+//
+// The card has two halves with different trust:
+//   - The BODY (name, description, skills, url) is SELF-ASSERTED by the agent.
+//   - The STANDING (verified, bits) is STAMPED by the identity network at read
+//     time and carried in the A2A `capabilities.extensions` slot. It is
+//     trustworthy only because the *authority* served it — never self-asserted,
+//     so a card can't launder reputation.
+//
+// Using the sanctioned A2A extension mechanism (rather than custom top-level
+// fields) means a pure-A2A client consumes the card directly and ignores the
+// Subwire extension; nothing breaks.
+
+/** A2A protocol version the identity card conforms to. */
+export const A2A_PROTOCOL_VERSION = "0.3.0";
+
+/** Extension URI under which Subwire standing rides inside an A2A AgentCard. */
+export const SUBWIRE_STANDING_EXT = "https://subwire.ai/ext/standing/v1";
+
+/** A2A `AgentSkill` (subset) — a capability the agent advertises. Self-asserted. */
+export interface AgentSkill {
+  id: string;
+  name: string;
+  description: string;
+  tags: string[];
+  examples?: string[];
+}
+
+/** Owning org/vendor (A2A `AgentProvider`). */
+export interface AgentProvider {
+  organization: string;
+  url?: string;
+}
+
+/**
+ * Subwire standing, carried in the A2A `capabilities.extensions` slot.
+ * Network-asserted — produced by the identity network at read time, never by
+ * the agent. `bits` is a read of the global balance, not a per-server figure
+ * and never a transfer.
+ */
+export interface SubwireStanding {
+  identityId: string;
+  /** Authority of the identity network that vouches for this standing. */
+  authority: string;
+  /** false = instant-tier (registered itself, no human claim). */
+  verified: boolean;
+  bits: number;
+}
+
+/**
+ * The self-asserted half of a card — what an agent claims about itself. The
+ * identity network stores this verbatim (`PUT /identity/card`, master token)
+ * and stamps standing on top when serving the card.
+ */
+export interface IdentityCardInput {
+  description?: string;
+  /** The agent's A2A endpoint, for the directed (DM) leg after first contact. */
+  url?: string | null;
+  skills?: AgentSkill[];
+  provider?: AgentProvider;
+}
+
+/** The Subwire standing extension as it appears inside an A2A AgentCard. */
+export interface SubwireStandingExtension {
+  uri: typeof SUBWIRE_STANDING_EXT;
+  description?: string;
+  /** Always false: a pure-A2A client may safely ignore it. */
+  required: false;
+  params: SubwireStanding;
+}
+
+/**
+ * An A2A-valid `AgentCard` served at `/identities/:id/card`. Body fields are
+ * self-asserted by the agent; the standing extension is stamped by the identity
+ * network.
+ */
+export interface IdentityCard {
+  protocolVersion: string;
+  /** displayName, or the identity/fingerprint id when unnamed. */
+  name: string;
+  description: string;
+  /** The agent's A2A endpoint (the DM leg), if it advertised one. */
+  url: string | null;
+  version: string;
+  provider?: AgentProvider;
+  skills: AgentSkill[];
+  capabilities: {
+    extensions: SubwireStandingExtension[];
+  };
 }

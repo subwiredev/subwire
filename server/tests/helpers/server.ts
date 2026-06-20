@@ -41,14 +41,11 @@ export interface PlatformStub {
 
 export interface SpawnedServer {
   url: string;
-  /** The first hosted subwire — convenience for single-subwire tests. */
-  slug: string;
-  subwires: string[];
   schema: string;
   platform: PlatformStub;
   proc: Subprocess;
-  /** Build a subwire-scoped API URL: swUrl("news", "/signals"). */
-  swUrl: (slug: string, suffix?: string) => string;
+  /** Build a wire API URL: swUrl("/signals") -> {base}/sw/signals. */
+  swUrl: (suffix?: string) => string;
   stop: () => Promise<void>;
 }
 
@@ -75,9 +72,10 @@ export function startPlatformStub(): PlatformStub {
             const payload = JSON.parse(
               Buffer.from(raw.slice(4).split(".")[0]!, "base64url").toString(),
             ) as { identityId: string; subwire: string };
-            const body = (await req.json().catch(() => ({}))) as { subwire?: string };
+            const body = (await req.json().catch(() => ({}))) as { authority?: string };
             const identity = identities.get(payload.identityId);
-            if (identity && body.subwire && payload.subwire === body.subwire) {
+            // A derived token is scoped to an authority (one server = one subwire).
+            if (identity && body.authority && payload.subwire === body.authority) {
               return Response.json({ ...withStanding(identity), subwire: payload.subwire });
             }
           } catch {}
@@ -104,18 +102,16 @@ export function startPlatformStub(): PlatformStub {
 let portCounter = 0;
 
 export async function startServer(opts: {
-  slug?: string;
-  /** Host multiple subwires (multi-subwire server). Defaults to [slug]. */
-  subwires?: string[];
+  name?: string;
   env?: Record<string, string>;
   platform?: PlatformStub;
   /** Claim the server's own host as its sw:// authority (third-party mode). */
   claimOwnAuthority?: boolean;
-  /** Per-subwire config-declared publish allow/block lists, keyed by slug. */
-  rules?: Record<string, { allow?: string[]; block?: string[] }>;
+  /** Wire-level publish rules (the server is the governance boundary). */
+  allow?: string[];
+  block?: string[];
+  allowedSignalTypes?: string[] | null;
 } = {}): Promise<SpawnedServer> {
-  const subwires = opts.subwires ?? [opts.slug ?? "testwire"];
-  const slug = subwires[0];
   const schema = `sw_test_${Math.random().toString(36).slice(2, 10)}`;
   const port = 4300 + portCounter++ * 7 + Math.floor(Math.random() * 5);
   const platform = opts.platform ?? startPlatformStub();
@@ -126,7 +122,12 @@ export async function startServer(opts: {
   const configPath = join(configDir, "subwire.config.json");
   writeFileSync(
     configPath,
-    JSON.stringify({ subwires: subwires.map((slug) => ({ slug, ...opts.rules?.[slug] })) }),
+    JSON.stringify({
+      name: opts.name ?? "testwire",
+      ...(opts.allow ? { allow: opts.allow } : {}),
+      ...(opts.block ? { block: opts.block } : {}),
+      ...(opts.allowedSignalTypes !== undefined ? { allowedSignalTypes: opts.allowedSignalTypes } : {}),
+    }),
   );
 
   const proc = Bun.spawn(["bun", "--env-file=.env.test", "run", "src/index.ts"], {
@@ -149,12 +150,10 @@ export async function startServer(opts: {
 
   return {
     url: base,
-    slug,
-    subwires,
     schema,
     platform,
     proc,
-    swUrl: (s: string, suffix = "") => `${base}/sw/v1/${s}${suffix}`,
+    swUrl: (suffix = "") => `${base}/sw${suffix}`,
     async stop() {
       try {
         proc.kill("SIGTERM");

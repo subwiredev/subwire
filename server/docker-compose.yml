@@ -1,0 +1,58 @@
+# Subwire — spin up and go.
+#
+# Brings up a subwire server AND its database together. No identity service to
+# run, no config file to write:
+#
+#   docker compose up
+#
+# You get a server on http://localhost:4000 hosting one board, "main", in
+# LOCAL MODE (no identity network). Post with any bearer token of 8+ chars —
+# that token becomes your durable identity. Reads are public.
+#
+#   # post a signal (the body IS the signal — flat, $-prefixed envelope keys)
+#   curl -X POST localhost:4000/sw/main/signals \
+#     -H "Authorization: Bearer my-secret-token-please-change" \
+#     -H "Content-Type: application/json" \
+#     -d '{"$type":"broadcast","text":"hello wire"}'
+#
+#   # read the board
+#   curl localhost:4000/sw/main/signals
+#
+# Going public later? Set PUBLIC_SUBWIRE_HOST to your domain, serve it over
+# HTTPS, and (optionally) point IDENTITY_URL at an identity network to get
+# shared identities + bits. See docs: /selfhosting/server/.
+
+services:
+  server:
+    image: ghcr.io/subwiredev/server:latest
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    environment:
+      DATABASE_URL: postgres://subwire:subwire@db:5432/subwire
+      # No IDENTITY_URL on purpose → local mode. Set it to an identity network's
+      # URL to switch on shared identities + bits.
+      # PUBLIC_SUBWIRE_HOST: your-domain.com   # uncomment when you go public
+      # Token for the admin API (provision more boards, moderate). Change it.
+      SERVER_ADMIN_TOKEN: ${SERVER_ADMIN_TOKEN:-change-me-please}
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: subwire
+      POSTGRES_PASSWORD: subwire
+      POSTGRES_DB: subwire
+    volumes:
+      - subwire-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U subwire"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+volumes:
+  subwire-pgdata:

@@ -8,7 +8,7 @@ let server: SpawnedServer;
 
 beforeAll(async () => {
   server = await startServer({
-    slug: "limitwire",
+    name: "limitwire",
     env: {
       PUBLISH_RATE_LIMIT_MAX: "3",
       PUBLISH_RATE_LIMIT_WINDOW_MS: "60000",
@@ -31,13 +31,13 @@ afterAll(async () => {
 });
 
 async function publish(ttl = 60, token = TOKEN): Promise<Response> {
-  return fetch(`${server.url}/sw/v1/${server.slug}/signals`, {
+  return fetch(`${server.url}/sw/signals`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ signal: { $type: "broadcast" }, ttl }),
+    body: JSON.stringify({ $type: "broadcast", $ttl: ttl }),
   });
 }
 
@@ -74,15 +74,15 @@ describe("expiry semantics", () => {
       await sql.end();
     }
 
-    const active = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals`)).json();
+    const active = await (await fetch(`${server.url}/sw/v1/signals`)).json();
     expect(active.signals.some((s: any) => s.id === signal.id)).toBe(false);
 
     const withExpired = await (
-      await fetch(`${server.url}/sw/v1/${server.slug}/signals?includeExpired=1&origin=agent_expiry`)
+      await fetch(`${server.url}/sw/v1/signals?includeExpired=1&origin=agent_expiry`)
     ).json();
     expect(withExpired.signals.some((s: any) => s.id === signal.id)).toBe(true);
 
-    const detail = await fetch(`${server.url}/sw/v1/${server.slug}/signals/${signal.id}`);
+    const detail = await fetch(`${server.url}/sw/v1/signals/${signal.id}`);
     expect(detail.status).toBe(200);
   });
 });
@@ -92,18 +92,18 @@ describe("platform outage", () => {
     server.platform.stop();
     // The previous verify cache entry expires after 30s; use a fresh token to
     // bypass the positive cache instead of waiting.
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/signals`, {
+    const res = await fetch(`${server.url}/sw/v1/signals`, {
       method: "POST",
       headers: {
         "content-type": "application/json",
         authorization: "Bearer swt_never_seen_before",
       },
-      body: JSON.stringify({ signal: { $type: "broadcast" }, ttl: 60 }),
+      body: JSON.stringify({ $type: "broadcast", $ttl: 60 }),
     });
     expect(res.status).toBe(401);
 
-    // Reads stay up regardless of platform availability.
-    const read = await fetch(`${server.url}/sw/v1/${server.slug}/signals`);
+    // Reads stay up regardless of identity-network availability.
+    const read = await fetch(`${server.url}/sw/v1/signals`);
     expect(read.status).toBe(200);
   });
 });

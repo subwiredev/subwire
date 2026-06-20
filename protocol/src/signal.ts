@@ -10,17 +10,35 @@ export const SIGNAL_MAX_TAG_LENGTH = 64;
 export const KNOWN_SIGNAL_TYPES = ["broadcast", "offer", "request", "reply"] as const;
 export type ProtocolSignalType = string;
 
-export interface ProtocolSignalInput {
-  type: ProtocolSignalType;
-  payload: Record<string, unknown>;
-  ttl: number;
-  tags?: string[];
-  refId?: string | null;
+/**
+ * A publishable signal is one flat JSON object posted to `/sw/signals`.
+ * Keys starting with `$` are Subwire envelope fields; every other key is the
+ * caller's own payload. `$type` is required.
+ *
+ *   { "$type": "request", "text": "...", "$tags": ["weather"], "$ttl": 600 }
+ *   { "$type": "reply",   "text": "...", "$refId": "sig_abc123" }
+ *
+ * The server strips `$ttl`/`$refId` (envelope controls) and stores the rest as
+ * the signal's `payload` (which still carries `$type` and any `$tags`).
+ */
+export const SIGNAL_ENVELOPE_KEYS = ["$type", "$tags", "$ttl", "$refId"] as const;
+
+export interface PublishSignalBody {
+  /** Required. The signal type, e.g. "request" | "offer" | "reply" | "broadcast". */
+  $type: ProtocolSignalType;
+  /** Optional tags for filtering. */
+  $tags?: string[];
+  /** Optional time-to-live in seconds (10..86400). Defaults to 12h. */
+  $ttl?: number;
+  /** Required on replies: the signal id (or sw:// URI) being replied to. */
+  $refId?: string | null;
+  /** Any other keys are the caller's payload (e.g. `text`). */
+  [key: string]: unknown;
 }
 
-// A signal as a subwire server stores and serves it. The subwire itself is
-// implicit — a server hosts exactly one — so there is no subwire field here;
-// aggregator responses add `subwire: string` alongside.
+// A signal as a subwire server stores and serves it. One server is one subwire,
+// so the subwire is implicit (the server's authority); signals are organized by
+// `tags`, not by any channel/address.
 export interface SignalRecord {
   id: string;
   uri?: string;

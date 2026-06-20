@@ -1,11 +1,8 @@
 import { existsSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { resolve } from "node:path";
 import { z } from "zod";
-import {
-  assertSubwireSlug,
-  subwireAuthority,
-  subwireAuthorityFromHttpUrl,
-} from "subwire";
+import { subwireAuthority, subwireAuthorityFromHttpUrl } from "subwire";
 
 function required(name: string): string {
   const value = process.env[name];
@@ -24,68 +21,45 @@ function pgSchemaName(): string {
   return value;
 }
 
-export interface SubwireSeed {
-  slug: string;
+export interface WireConfig {
   name: string | null;
   description: string | null;
-  // Identity allow/block lists that gate publishing, seeded into subwire_rules
-  // at boot. A non-empty `allow` makes the subwire allow-list only (sole
-  // publishers); `block` denies specific identities. See checkSubwireRules.
+  // Identity allow/block lists that gate publishing on the whole wire (the
+  // server is the governance boundary). A non-empty `allow` makes the wire
+  // post-restricted; `block` denies specific identities. See checkRules.
   allow: string[];
   block: string[];
+  // If set, only these signal types may be published.
+  allowedSignalTypes: string[] | null;
 }
 
-// Slugs reserved by the server's own /sw/v1 surface so a subwire can't shadow
-// the server-level collection routes (/sw/v1/subwires, /sw/v1/search).
-export const RESERVED_SERVER_SLUGS = new Set(["subwires", "search"]);
-
-export function assertHostableSlug(slug: string): string {
-  if (RESERVED_SERVER_SLUGS.has(slug)) {
-    throw new Error(`"${slug}" is reserved by the server API and cannot be a subwire slug`);
-  }
-  return slug;
-}
-
-// Default subwire served when no config file exists, so `bun run start` works
-// with zero configuration.
-const DEFAULT_SUBWIRE_SLUG = "main";
 const DEFAULT_CONFIG_FILE = "subwire.config.json";
 
-const subwireSchema = z.object({
-  slug: z.string(),
+const fileSchema = z.object({
   name: z.string().nullish(),
   description: z.string().nullish(),
-  // Identity ids permitted to publish. When present and non-empty, only these
-  // identities may publish (allow-list mode).
   allow: z.array(z.string()).optional(),
-  // Identity ids forbidden from publishing.
   block: z.array(z.string()).optional(),
-});
-
-const fileSchema = z.object({
-  subwires: z.array(subwireSchema).min(1, "config file must list at least one subwire"),
+  allowedSignalTypes: z.array(z.string().min(1).max(128)).nullish(),
 });
 
 /**
- * Subwires this server hosts at boot, loaded from a JSON config file:
+ * The single wire this server hosts, loaded from a JSON config file:
  *
- *   { "subwires": [{ "slug": "main", "name": "Main", "description": "...",
- *                    "allow": ["pubkey-a"], "block": ["pubkey-b"] }] }
+ *   { "name": "My Wire", "description": "...",
+ *     "allow": ["id-a"], "block": ["id-b"], "allowedSignalTypes": null }
  *
- * Path resolution: SUBWIRE_CONFIG if set (and required to exist), else
- * ./subwire.config.json. When no file is present the server defaults to a
- * single `main` subwire. More can be added at runtime via the admin
- * provisioning API.
+ * Path: SUBWIRE_CONFIG if set (and required to exist), else ./subwire.config.json.
+ * With no file the server runs an unnamed, open wire — boots with zero config.
  */
-function loadSubwires(): SubwireSeed[] {
+function loadWire(): WireConfig {
   const explicit = process.env.SUBWIRE_CONFIG;
   const path = resolve(explicit ?? DEFAULT_CONFIG_FILE);
 
+  const empty: WireConfig = { name: null, description: null, allow: [], block: [], allowedSignalTypes: null };
   if (!existsSync(path)) {
-    if (explicit) {
-      throw new Error(`SUBWIRE_CONFIG points at ${path}, but no file exists there`);
-    }
-    return [{ slug: DEFAULT_SUBWIRE_SLUG, name: null, description: null, allow: [], block: [] }];
+    if (explicit) throw new Error(`SUBWIRE_CONFIG points at ${path}, but no file exists there`);
+    return empty;
   }
 
   let raw: unknown;
@@ -104,65 +78,70 @@ function loadSubwires(): SubwireSeed[] {
     ...new Set((ids ?? []).map((id) => id.trim()).filter(Boolean)),
   ];
 
-  const seen = new Map<string, SubwireSeed>();
-  for (const subwire of parsed.data.subwires) {
-    const slug = assertHostableSlug(assertSubwireSlug(subwire.slug.trim()));
-    if (!seen.has(slug)) {
-      seen.set(slug, {
-        slug,
-        name: subwire.name?.trim() || null,
-        description: subwire.description?.trim() || null,
-        allow: cleanIds(subwire.allow),
-        block: cleanIds(subwire.block),
-      });
-    }
-  }
-  return [...seen.values()];
+  return {
+    name: parsed.data.name?.trim() || null,
+    description: parsed.data.description?.trim() || null,
+    allow: cleanIds(parsed.data.allow),
+    block: cleanIds(parsed.data.block),
+    allowedSignalTypes: parsed.data.allowedSignalTypes ?? null,
+  };
 }
 
+const databaseUrl = required("DATABASE_URL");
+
+// The identity network that verifies this server's publishers (auth + bits).
+// OPTIONAL: with IDENTITY_URL set, the server runs in **network mode** (its one
+// outbound dependency — any service implementing the verify contract). With it
+// unset, the server runs in **local mode**: no identity network, no economy.
+const identityUrl = process.env.IDENTITY_URL?.replace(/\/$/, "") || null;
+const identityMode: "network" | "local" = identityUrl ? "network" : "local";
+
 export const config = {
-  subwires: loadSubwires(),
+  wire: loadWire(),
   port: parseInt(process.env.SERVER_PORT ?? "4000", 10),
-  databaseUrl: required("DATABASE_URL"),
+  databaseUrl,
   // Migrations need a session-mode connection; fall back to the pooled URL for
   // self-hosters who run without a pooler.
-  databaseUrlDirect: process.env.DATABASE_URL_DIRECT ?? required("DATABASE_URL"),
+  databaseUrlDirect: process.env.DATABASE_URL_DIRECT ?? databaseUrl,
   pgSchema: pgSchemaName(),
-  // The identity network that verifies this server's publishers (auth + bits).
-  // The server's one outbound dependency: a third party can point at any
-  // identity network that implements the verify contract.
-  identityUrl: required("IDENTITY_URL").replace(/\/$/, ""),
-  // Optional discovery hint advertised at /.well-known/subwire — where a wider
-  // network (search, registry, the human app) that indexes this server lives.
-  // Pure metadata; the server never calls it. Omitted when unset.
+  identityUrl,
+  identityMode,
+  // Economy (bits) and the Sybil-resistant identity tiers only exist with an
+  // identity network. In local mode those gates are off (no bits to gate on).
+  economyEnabled: identityMode === "network",
+  // Local mode only: whether fingerprint identities count as verified standing.
+  localIdentityVerified: (process.env.LOCAL_IDENTITY_VERIFIED ?? "1") !== "0",
+  // Local mode only: HMAC key behind tripcodes. Deployment-unique by default.
+  fingerprintSecret:
+    process.env.FINGERPRINT_SECRET ||
+    createHash("sha256").update(`subwire-fp:${databaseUrl}`).digest("hex"),
+  // Optional discovery hint advertised at /.well-known/subwire — a wider network
+  // (registry, search, human app) that indexes this server. Metadata only.
   aggregatorUrl: process.env.AGGREGATOR_URL?.replace(/\/$/, "") ?? null,
   adminToken: process.env.SERVER_ADMIN_TOKEN ?? null,
-  // The server's own public host — the authority half of every sw:// URI and
-  // token scope it emits. First-party sets this to the domain that fronts it
-  // (e.g. subwire.ai); a third party sets its own domain.
+  // The server's own public host — the authority of every sw:// URI and token
+  // scope it emits. One server is one subwire, so this authority IS the scope.
   publicAuthority: process.env.PUBLIC_SUBWIRE_HOST ?? null,
 };
 
-/** Authority of the identity network — where this server's identities live. */
+/**
+ * Authority of the identity network — where this server's identities live. In
+ * local mode there is no identity network, so identities are server-local and
+ * their URIs are addressed at the server's own authority.
+ */
 export function identityAuthority(): string {
-  return subwireAuthorityFromHttpUrl(config.identityUrl);
+  return config.identityUrl
+    ? subwireAuthorityFromHttpUrl(config.identityUrl)
+    : serverScopeAuthority();
 }
 
 /**
- * The authority half of every subwire scope this server serves. Defaults to the
- * server's own host (localhost:port) when PUBLIC_SUBWIRE_HOST is unset, so local
- * dev self-addresses without any external pointer.
+ * This server's authority — its sw:// host, and (since one server is one
+ * subwire) its full token scope. Defaults to localhost:port when
+ * PUBLIC_SUBWIRE_HOST is unset, so local dev self-addresses with no pointer.
  */
 export function serverScopeAuthority(): string {
   return config.publicAuthority
     ? subwireAuthority(config.publicAuthority)
     : subwireAuthority(`localhost:${config.port}`);
-}
-
-/**
- * A subwire's fully-qualified scope ("{authority}/{slug}"). Claimed when
- * verifying tokens so the identity network can honor subwire-scoped derived tokens.
- */
-export function subwireScope(slug: string): string {
-  return `${serverScopeAuthority()}/${slug}`;
 }

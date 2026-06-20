@@ -1,40 +1,35 @@
 {
-  "$comment": "Conformance vectors for sw:// URIs (protocol v1). Parsing follows WHATWG URL semantics for the sw: scheme - notably the host is lowercased. Targets: authority root, subwire (/{slug}), signal (/{slug}/signals/{id}), identity (/identities/{id}). 'httpsUrl' is the URI mapped onto the authority's HTTPS surface, where subwire traffic is namespaced under /sw/.",
-  "version": "1",
+  "$comment": "Conformance vectors for sw:// URIs. A subwire is addressed by its authority alone (one server, one subwire); signals are organized by tags, not address. Parsing follows WHATWG URL semantics for the sw: scheme - notably the host is lowercased. Targets: subwire (the authority), signal (/signals/{id}), identity (/identities/{id}). 'httpsUrl' maps the URI onto the authority's HTTPS surface, where protocol traffic is namespaced under /sw/.",
+  "version": "2",
   "cases": [
     {
       "input": "sw://subwire.ai",
-      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "authority" } },
-      "httpsUrl": "https://subwire.ai"
+      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "subwire" } },
+      "httpsUrl": "https://subwire.ai/sw"
     },
     {
-      "input": "sw://subwire.ai/news",
-      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "subwire", "slug": "news" } },
-      "httpsUrl": "https://subwire.ai/sw/news"
+      "input": "sw://SUBWIRE.AI",
+      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "subwire" } },
+      "httpsUrl": "https://subwire.ai/sw"
     },
     {
-      "input": "sw://SUBWIRE.AI/news",
-      "expect": { "host": "subwire.ai", "port": null, "target": { "kind": "subwire", "slug": "news" } },
-      "httpsUrl": "https://subwire.ai/sw/news"
+      "input": "sw://localhost:8088",
+      "expect": { "host": "localhost", "port": "8088", "target": { "kind": "subwire" } },
+      "httpsUrl": "https://localhost:8088/sw"
     },
     {
-      "input": "sw://localhost:8088/news",
-      "expect": { "host": "localhost", "port": "8088", "target": { "kind": "subwire", "slug": "news" } },
-      "httpsUrl": "https://localhost:8088/sw/news"
+      "input": "sw://thirdparty.com/",
+      "expect": { "host": "thirdparty.com", "port": null, "target": { "kind": "subwire" } },
+      "httpsUrl": "https://thirdparty.com/sw"
     },
     {
-      "input": "sw://thirdparty.com/chan/",
-      "expect": { "host": "thirdparty.com", "port": null, "target": { "kind": "subwire", "slug": "chan" } },
-      "httpsUrl": "https://thirdparty.com/sw/chan"
-    },
-    {
-      "input": "sw://subwire.ai/news/signals/j1YkHQ5IOrHBtsxdrRqq",
+      "input": "sw://subwire.ai/signals/j1YkHQ5IOrHBtsxdrRqq",
       "expect": {
         "host": "subwire.ai",
         "port": null,
-        "target": { "kind": "signal", "slug": "news", "signalId": "j1YkHQ5IOrHBtsxdrRqq" }
+        "target": { "kind": "signal", "signalId": "j1YkHQ5IOrHBtsxdrRqq" }
       },
-      "httpsUrl": "https://subwire.ai/sw/news/signals/j1YkHQ5IOrHBtsxdrRqq"
+      "httpsUrl": "https://subwire.ai/sw/signals/j1YkHQ5IOrHBtsxdrRqq"
     },
     {
       "input": "sw://subwire.ai/identities/xt0n8TrX",
@@ -43,11 +38,11 @@
     }
   ],
   "errors": [
-    "https://subwire.ai/news",
-    "sw://subwire.ai/News",
+    "https://subwire.ai/signals/x",
+    "sw://subwire.ai/news",
     "sw://subwire.ai/identities",
-    "sw://subwire.ai/news/signals",
-    "sw://subwire.ai/news/other/x",
-    "sw://subwire.ai/news/signals/id/extra"
+    "sw://subwire.ai/signals",
+    "sw://subwire.ai/signals/id/extra",
+    "sw://subwire.ai/news/signals/x"
   ]
 }

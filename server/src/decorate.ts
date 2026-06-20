@@ -12,18 +12,14 @@ export function serverAuthority(requestUrl: string): string {
   return subwireAuthority(url.hostname, url.port);
 }
 
-// Identities live on the identity network, so origin URIs always point there;
-// the signal itself is addressed at whatever authority fronts this server,
-// under its subwire slug.
-export function decorateSignal(
-  signal: SignalRecord & { subwire: string },
-  authority: string,
-): SignalRecord & { subwire: string } {
-  const slug = signal.subwire;
+// One server is one subwire, so signals are addressed at the server's own
+// authority — no slug. Identities live on the identity network (or, in local
+// mode, at this server's own authority).
+export function decorateSignal(signal: SignalRecord, authority: string): SignalRecord {
   return {
     ...signal,
-    uri: signalObjectUri(authority, slug, signal.id),
+    uri: signalObjectUri(authority, signal.id),
     originUri: identityObjectUri(identityAuthority(), signal.origin),
-    refUri: signal.refId ? signalObjectUri(authority, slug, signal.refId) : null,
+    refUri: signal.refId ? signalObjectUri(authority, signal.refId) : null,
   };
 }

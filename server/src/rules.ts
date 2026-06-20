@@ -1,14 +1,12 @@
-import { eq } from "drizzle-orm";
 import { db } from "./db/client.js";
-import { subwires, subwireRules } from "./db/schema.js";
+import { rules, wire } from "./db/schema.js";
 
 export interface PublishContext {
-  subwire: string;
   identityId: string;
   signalType: string;
 }
 
-interface SubwirePolicy {
+interface WirePolicy {
   allowedSignalTypes: string[] | null;
   rules: Array<{ ruleType: "allow" | "deny"; identityId: string }>;
 }
@@ -16,56 +14,46 @@ interface SubwirePolicy {
 const POLICY_CACHE_TTL_MS =
   Math.max(1, Number(process.env.SUBWIRE_RULES_CACHE_TTL_SECONDS ?? "15")) * 1000;
 
-const policyCache = new Map<string, { expiresAt: number; value: SubwirePolicy }>();
+let policyCache: { expiresAt: number; value: WirePolicy } | null = null;
 
-export async function getSubwirePolicy(subwire: string): Promise<SubwirePolicy> {
-  const cached = policyCache.get(subwire);
-  if (cached && cached.expiresAt > Date.now()) return cached.value;
+export async function getWirePolicy(): Promise<WirePolicy> {
+  if (policyCache && policyCache.expiresAt > Date.now()) return policyCache.value;
 
-  const [subwireRows, rules] = await Promise.all([
-    db.select({ allowedSignalTypes: subwires.allowedSignalTypes }).from(subwires).where(eq(subwires.slug, subwire)),
-    db
-      .select({ ruleType: subwireRules.ruleType, identityId: subwireRules.identityId })
-      .from(subwireRules)
-      .where(eq(subwireRules.subwire, subwire)),
+  const [wireRows, ruleRows] = await Promise.all([
+    db.select({ allowedSignalTypes: wire.allowedSignalTypes }).from(wire),
+    db.select({ ruleType: rules.ruleType, identityId: rules.identityId }).from(rules).orderBy(rules.id),
   ]);
 
-  const policy: SubwirePolicy = {
-    allowedSignalTypes: subwireRows[0]?.allowedSignalTypes ?? null,
-    rules,
+  const value: WirePolicy = {
+    allowedSignalTypes: wireRows[0]?.allowedSignalTypes ?? null,
+    rules: ruleRows,
   };
-  policyCache.set(subwire, { value: policy, expiresAt: Date.now() + POLICY_CACHE_TTL_MS });
-  return policy;
+  policyCache = { value, expiresAt: Date.now() + POLICY_CACHE_TTL_MS };
+  return value;
 }
 
-export async function checkSubwireRules(
-  ctx: PublishContext,
-): Promise<{ allowed: boolean; reason?: string }> {
-  const { allowedSignalTypes, rules } = await getSubwirePolicy(ctx.subwire);
+export async function checkRules(ctx: PublishContext): Promise<{ allowed: boolean; reason?: string }> {
+  const { allowedSignalTypes, rules: ruleList } = await getWirePolicy();
 
   if (allowedSignalTypes && !allowedSignalTypes.includes(ctx.signalType)) {
-    return {
-      allowed: false,
-      reason: `Signal type "${ctx.signalType}" is not accepted on this subwire`,
-    };
+    return { allowed: false, reason: `Signal type "${ctx.signalType}" is not accepted on this wire` };
   }
 
-  const allowRules = rules.filter((r) => r.ruleType === "allow");
+  const allowRules = ruleList.filter((r) => r.ruleType === "allow");
   if (allowRules.length > 0) {
     if (!allowRules.some((r) => r.identityId === ctx.identityId)) {
-      return { allowed: false, reason: "Not authorized to publish on this subwire" };
+      return { allowed: false, reason: "Not authorized to publish on this wire" };
     }
     return { allowed: true };
   }
 
-  if (rules.some((r) => r.ruleType === "deny" && r.identityId === ctx.identityId)) {
-    return { allowed: false, reason: "Blocked from publishing on this subwire" };
+  if (ruleList.some((r) => r.ruleType === "deny" && r.identityId === ctx.identityId)) {
+    return { allowed: false, reason: "Blocked from publishing on this wire" };
   }
 
   return { allowed: true };
 }
 
-export function invalidateSubwirePolicyCache(subwire?: string): void {
-  if (subwire) policyCache.delete(subwire);
-  else policyCache.clear();
+export function invalidateWirePolicyCache(): void {
+  policyCache = null;
 }

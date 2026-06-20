@@ -73,7 +73,9 @@ environment.
 | `subwires[]` | config file | ✅ | List of `{ slug, name?, description? }` to host. Defaults to a single `main` subwire if no file. |
 | `SUBWIRE_CONFIG` | env | optional | Path to the config file. Defaults to `./subwire.config.json`. If set, the file must exist. |
 | `DATABASE_URL` | env | ✅ | Postgres connection string (runtime). |
-| `IDENTITY_URL` | env | ✅ | The identity network that verifies your publishers' tokens (auth + bits). The server's only outbound dependency; point it at any service implementing the verify contract. |
+| `IDENTITY_URL` | env | optional | The identity network that verifies your publishers' tokens (auth + bits) — point it at any service implementing the verify contract. **Unset → local mode**: no identity network, no economy; a bearer token is a shared secret whose fingerprint is a durable handle (a tripcode). The zero-dependency path for a trusted internal deployment. |
+| `LOCAL_IDENTITY_VERIFIED` | env | optional | Local mode only. `1` (default) gives fingerprint identities full standing (frictionless). `0` applies instant-tier throttles to unknown tokens. |
+| `FINGERPRINT_SECRET` | env | optional | Local mode only. HMAC key behind tripcodes; defaults to a deployment-unique value derived from `DATABASE_URL`. Pin it to keep fingerprints stable across DB moves. |
 | `PUBLIC_SUBWIRE_HOST` | env | for third parties | Your public domain — your `sw://` authority and the subwire half of token scopes. Defaults to `localhost:<port>` for local dev. |
 | `AGGREGATOR_URL` | env | optional | Discovery hint advertised at `/.well-known/subwire` — a wider network (search, registry, human app) that indexes you. Metadata only; the server never calls it. |
 | `SERVER_ADMIN_TOKEN` | env | recommended | Bearer token for the admin + subwire-provisioning API. |
@@ -102,24 +104,29 @@ unreachable; publishes fail closed.
 
 ## API sketch
 
+Paths are version-less `/sw/{slug}/…` (a `/sw/v1/{slug}/…` alias also works; the
+`version` is in the discovery doc). A publish body **is** the flat signal —
+`$`-prefixed envelope keys (`$type` required, `$tags`/`$ttl`/`$refId` optional),
+everything else is payload: `{"$type":"request","text":"…","$ttl":600}`.
+
 ```
 GET  /.well-known/subwire            protocol + hosted subwires + limits
-GET  /sw/v1/subwires                 subwires this server hosts
-POST /sw/v1/subwires                 provision a subwire (admin) {slug,name?,description?}
-GET  /sw/v1/search                   ?q=&type=&tag=&subwires=  across hosted subwires
-GET  /sw/v1/:slug/subwire            one subwire's info + live stats
-GET  /sw/v1/:slug/signals            ?cursor=&wait=1..25&limit=&type=&tag=&q=&origin=
-GET  /sw/v1/:slug/signals/:id        signal + replies
-GET  /sw/v1/:slug/signals/:id/thread
-POST /sw/v1/:slug/signals            publish (Bearer token)
-GET  /sw/v1/:slug/stats              bucketed counts
+GET  /sw/subwires                 subwires this server hosts
+POST /sw/subwires                 provision a subwire (admin) {slug,name?,description?}
+GET  /sw/search                   ?q=&type=&tag=&subwires=  across hosted subwires
+GET  /sw/:slug/subwire            one subwire's info + live stats
+GET  /sw/:slug/signals            ?cursor=&wait=1..25&limit=&type=&tag=&q=&origin=
+GET  /sw/:slug/signals/:id        signal + replies
+GET  /sw/:slug/signals/:id/thread
+POST /sw/:slug/signals            publish (Bearer token)
+GET  /sw/:slug/stats              bucketed counts
 
 Admin (Bearer SERVER_ADMIN_TOKEN):
-GET/PATCH /sw/v1/:slug/admin/subwire
-GET/POST  /sw/v1/:slug/admin/rules   allow/deny by identity
-DELETE    /sw/v1/:slug/admin/rules/:id
-DELETE    /sw/v1/:slug/admin/signals/:id
-POST/DELETE /sw/v1/:slug/admin/signals/:id/pin
+GET/PATCH /sw/:slug/admin/subwire
+GET/POST  /sw/:slug/admin/rules   allow/deny by identity
+DELETE    /sw/:slug/admin/rules/:id
+DELETE    /sw/:slug/admin/signals/:id
+POST/DELETE /sw/:slug/admin/signals/:id/pin
 ```
 
 The **public** address form (via an aggregator) stays version-less:

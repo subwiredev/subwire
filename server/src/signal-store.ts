@@ -1,28 +1,17 @@
-import { and, desc, eq, gt, ilike, inArray, isNull, lte, max, or, sql } from "drizzle-orm";
+import { and, desc, eq, gt, ilike, isNull, lte, max, or, sql } from "drizzle-orm";
 import type { SignalRecord } from "subwire";
 import { db } from "./db/client.js";
-import { subwires, signals } from "./db/schema.js";
+import { signals } from "./db/schema.js";
 
 export type { SignalRecord };
 
 export interface SignalSearchQuery {
-  subwire: string;
   cursor?: number;
   since?: Date;
   type?: string;
-  tag?: string;
+  tags?: string[];
   q?: string;
   origin?: string;
-  includeExpired?: boolean;
-  limit?: number;
-}
-
-/** Cross-subwire search over the subwires this server hosts. */
-export interface MultiSubwireSearchQuery {
-  subwires: string[];
-  type?: string;
-  tag?: string;
-  q?: string;
   includeExpired?: boolean;
   limit?: number;
 }
@@ -42,10 +31,9 @@ function limitOf(value: number | undefined): number {
 
 type SignalRow = typeof signals.$inferSelect;
 
-function rowToSignal(row: SignalRow): SignalRecord & { subwire: string } {
+function rowToSignal(row: SignalRow): SignalRecord {
   return {
     id: row.id,
-    subwire: row.subwire,
     origin: row.origin,
     originName: row.originName ?? null,
     originVerified: row.originVerified,
@@ -82,56 +70,49 @@ function textMatch(q: string) {
 }
 
 function searchConditions(query: SignalSearchQuery) {
-  const conditions = [eq(signals.subwire, query.subwire)];
+  const conditions = [];
   const active = activeFilter(query.includeExpired);
   if (active) conditions.push(active);
   if (query.since) conditions.push(gt(signals.createdAt, query.since));
   if (query.type) conditions.push(eq(signals.type, query.type));
   if (query.origin) conditions.push(eq(signals.origin, query.origin));
-  if (query.tag) {
-    conditions.push(sql`${signals.tags} @> ARRAY[${query.tag.toLowerCase()}]::text[]`);
+  if (query.tags && query.tags.length > 0) {
+    // OR across tags: a signal matches if it carries any of the requested tags.
+    const lowered = query.tags.map((t) => t.toLowerCase());
+    conditions.push(sql`${signals.tags} && ARRAY[${sql.join(lowered, sql`,`)}]::text[]`);
   }
   if (query.q?.trim()) conditions.push(textMatch(query.q));
   return conditions;
 }
 
-// In-process new-signal notifier backing the long-poll `wait` param, keyed by
-// subwire so a publish only wakes waiters on that subwire. The server is
-// single-process by design, so no external bus is needed.
-const subwireListeners = new Map<string, Set<() => void>>();
+// In-process new-signal notifier backing the long-poll `wait` param. The server
+// is one subwire and single-process by design, so a single waiter set suffices.
+const listeners = new Set<() => void>();
 
-/** Resolves true when a new signal lands on `subwire`, false on timeout. */
-export function waitForNewSignal(subwire: string, timeoutMs: number): Promise<boolean> {
+/** Resolves true when a new signal lands, false on timeout. */
+export function waitForNewSignal(timeoutMs: number): Promise<boolean> {
   if (timeoutMs <= 0) return Promise.resolve(false);
   return new Promise((resolve) => {
-    const set = subwireListeners.get(subwire) ?? new Set();
-    subwireListeners.set(subwire, set);
     const listener = () => {
       clearTimeout(timer);
-      set.delete(listener);
+      listeners.delete(listener);
       resolve(true);
     };
     const timer = setTimeout(() => {
-      set.delete(listener);
+      listeners.delete(listener);
       resolve(false);
     }, timeoutMs);
-    set.add(listener);
+    listeners.add(listener);
   });
 }
 
-function wake(subwire: string): void {
-  const set = subwireListeners.get(subwire);
-  if (set) for (const listener of [...set]) listener();
+function wake(): void {
+  for (const listener of [...listeners]) listener();
 }
 
-interface StoredSignal extends SignalRecord {
-  subwire: string;
-}
-
-export async function upsertSignal(signal: StoredSignal): Promise<void> {
+export async function upsertSignal(signal: SignalRecord): Promise<void> {
   const values = {
     id: signal.id,
-    subwire: signal.subwire,
     origin: signal.origin,
     originName: signal.originName,
     originVerified: signal.originVerified ?? true,
@@ -144,17 +125,14 @@ export async function upsertSignal(signal: StoredSignal): Promise<void> {
     createdAt: signal.createdAt,
     expiresAt: signal.expiresAt,
   };
-  await db
-    .insert(signals)
-    .values(values)
-    .onConflictDoUpdate({ target: signals.id, set: values });
-  wake(signal.subwire);
+  await db.insert(signals).values(values).onConflictDoUpdate({ target: signals.id, set: values });
+  wake();
 }
 
 /**
- * Incremental read for one subwire. With a cursor: signals after that
- * insertion sequence, oldest-first. Without: the newest page, still
- * oldest-first, with nextCursor primed for the first incremental poll.
+ * Incremental read. With a cursor: signals after that insertion sequence,
+ * oldest-first. Without: the newest page, still oldest-first, with nextCursor
+ * primed for the first incremental poll.
  */
 export async function listActiveSignals(query: SignalSearchQuery): Promise<SignalPage> {
   const limit = limitOf(query.limit);
@@ -175,7 +153,7 @@ export async function listActiveSignals(query: SignalSearchQuery): Promise<Signa
   const rows = await db
     .select()
     .from(signals)
-    .where(and(...conditions))
+    .where(conditions.length > 0 ? and(...conditions) : undefined)
     .orderBy(desc(signals.seq))
     .limit(limit);
 
@@ -183,60 +161,27 @@ export async function listActiveSignals(query: SignalSearchQuery): Promise<Signa
   if (rows.length > 0) {
     nextCursor = String(rows[0].seq);
   } else {
-    const [row] = await db
-      .select({ seq: max(signals.seq) })
-      .from(signals)
-      .where(eq(signals.subwire, query.subwire));
+    const [row] = await db.select({ seq: max(signals.seq) }).from(signals);
     nextCursor = String(row?.seq ?? 0);
   }
   return { signals: rows.reverse().map(rowToSignal), nextCursor };
 }
 
-/** Cross-subwire search across the subwires this server hosts. */
-export async function searchAcrossSubwires(
-  query: MultiSubwireSearchQuery,
-): Promise<(SignalRecord & { subwire: string })[]> {
-  const limit = limitOf(query.limit);
-  const conditions = [inArray(signals.subwire, query.subwires)];
-  const active = activeFilter(query.includeExpired);
-  if (active) conditions.push(active);
-  if (query.type) conditions.push(eq(signals.type, query.type));
-  if (query.tag) {
-    conditions.push(sql`${signals.tags} @> ARRAY[${query.tag.toLowerCase()}]::text[]`);
-  }
-  if (query.q?.trim()) conditions.push(textMatch(query.q));
-  const rows = await db
-    .select()
-    .from(signals)
-    .where(and(...conditions))
-    .orderBy(desc(signals.createdAt), signals.id)
-    .limit(limit);
-  return rows.map(rowToSignal);
-}
-
-export async function getSignal(subwire: string, id: string): Promise<(SignalRecord & { subwire: string }) | null> {
-  const [row] = await db
-    .select()
-    .from(signals)
-    .where(and(eq(signals.subwire, subwire), eq(signals.id, id)));
+export async function getSignal(id: string): Promise<SignalRecord | null> {
+  const [row] = await db.select().from(signals).where(eq(signals.id, id));
   return row ? rowToSignal(row) : null;
 }
 
-export async function getSignalThread(subwire: string, id: string): Promise<SignalRecord[]> {
+export async function getSignalThread(id: string): Promise<SignalRecord[]> {
   const [rootRows, replyRows] = await Promise.all([
-    db.select().from(signals).where(and(eq(signals.subwire, subwire), eq(signals.id, id))),
-    db
-      .select()
-      .from(signals)
-      .where(and(eq(signals.subwire, subwire), eq(signals.refId, id)))
-      .orderBy(signals.createdAt)
-      .limit(100),
+    db.select().from(signals).where(eq(signals.id, id)),
+    db.select().from(signals).where(eq(signals.refId, id)).orderBy(signals.createdAt).limit(100),
   ]);
   return [...rootRows, ...replyRows].map(rowToSignal).sort(sortOldestFirst);
 }
 
-export async function deleteSignal(subwire: string, id: string): Promise<void> {
-  await db.delete(signals).where(and(eq(signals.subwire, subwire), eq(signals.id, id)));
+export async function deleteSignal(id: string): Promise<void> {
+  await db.delete(signals).where(eq(signals.id, id));
 }
 
 /** Removes signals that expired more than `graceSeconds` ago. */
@@ -248,14 +193,13 @@ export async function sweepExpiredSignals(graceSeconds: number): Promise<number>
   return result.length;
 }
 
-/** New threads (root signals) opened by an origin on a subwire in the last 24h. */
-export async function countRecentThreads(subwire: string, origin: string): Promise<number> {
+/** New threads (root signals) opened by an origin in the last 24h. */
+export async function countRecentThreads(origin: string): Promise<number> {
   const [row] = await db
     .select({ n: sql<number>`count(*)::int` })
     .from(signals)
     .where(
       and(
-        eq(signals.subwire, subwire),
         eq(signals.origin, origin),
         isNull(signals.refId),
         gt(signals.createdAt, sql`now() - interval '24 hours'`),
@@ -264,63 +208,13 @@ export async function countRecentThreads(subwire: string, origin: string): Promi
   return row?.n ?? 0;
 }
 
-export async function countActiveSignals(
-  subwire: string,
-): Promise<{ activeSignals: number; activeIdentities: number }> {
+export async function countActiveSignals(): Promise<{ activeSignals: number; activeIdentities: number }> {
   const [row] = await db
     .select({
       activeSignals: sql<number>`count(*)::int`,
       activeIdentities: sql<number>`count(distinct ${signals.origin})::int`,
     })
     .from(signals)
-    .where(and(eq(signals.subwire, subwire), gt(signals.expiresAt, sql`now()`)));
+    .where(gt(signals.expiresAt, sql`now()`));
   return row ?? { activeSignals: 0, activeIdentities: 0 };
-}
-
-// ── Subwire registry (server-local) ──────────────────────────────────────
-
-export interface SubwireRow {
-  slug: string;
-  name: string | null;
-  description: string | null;
-  allowedSignalTypes: string[] | null;
-}
-
-export async function listSubwires(): Promise<SubwireRow[]> {
-  const rows = await db.select().from(subwires).orderBy(subwires.slug);
-  return rows.map((r) => ({
-    slug: r.slug,
-    name: r.name ?? null,
-    description: r.description ?? null,
-    allowedSignalTypes: r.allowedSignalTypes ?? null,
-  }));
-}
-
-export async function getSubwire(slug: string): Promise<SubwireRow | null> {
-  const [r] = await db.select().from(subwires).where(eq(subwires.slug, slug));
-  return r
-    ? {
-        slug: r.slug,
-        name: r.name ?? null,
-        description: r.description ?? null,
-        allowedSignalTypes: r.allowedSignalTypes ?? null,
-      }
-    : null;
-}
-
-export async function createSubwire(input: {
-  slug: string;
-  name?: string | null;
-  description?: string | null;
-}): Promise<SubwireRow | null> {
-  const [r] = await db
-    .insert(subwires)
-    .values({
-      slug: input.slug,
-      name: input.name ?? input.slug,
-      description: input.description ?? null,
-    })
-    .onConflictDoNothing()
-    .returning();
-  return r ? await getSubwire(r.slug) : null;
 }

@@ -7,7 +7,7 @@ const BROKE = "swt_standing_broke";
 let server: SpawnedServer;
 
 beforeAll(async () => {
-  server = await startServer({ slug: "standingwire" });
+  server = await startServer({ name: "standingwire" });
   server.platform.tokens.set(FUNDED, {
     identityId: "agent_funded",
     displayName: "Funded",
@@ -26,11 +26,26 @@ afterAll(async () => {
   await server.stop();
 });
 
+// Tests pass a convenient { signal, ttl?, refId? }; the wire body is the flat
+// signal with $ttl/$refId envelope keys.
+function toWire(body: Record<string, unknown>): Record<string, unknown> {
+  const { signal, ttl, refId } = body as {
+    signal?: Record<string, unknown>;
+    ttl?: number;
+    refId?: string | null;
+  };
+  return {
+    ...(signal ?? {}),
+    ...(ttl != null ? { $ttl: ttl } : {}),
+    ...(refId != null ? { $refId: refId } : {}),
+  };
+}
+
 async function publish(body: Record<string, unknown>, token: string): Promise<Response> {
-  return fetch(`${server.url}/sw/v1/${server.slug}/signals`, {
+  return fetch(`${server.url}/sw/signals`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify(body),
+    body: JSON.stringify(toWire(body)),
   });
 }
 

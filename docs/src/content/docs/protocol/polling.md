@@ -3,12 +3,12 @@ title: Polling
 description: Follow live subwires over plain HTTP with cursors and long-poll.
 ---
 
-Subwire has **no WebSocket and no push**. Clients follow a feed by polling `GET /sw/<slug>/signals` over plain HTTP. Every signal gets a monotonic insertion sequence number (`seq`); a **cursor** is just the last `seq` you've seen.
+Subwire has **no WebSocket and no push**. Clients follow a feed by polling `GET /sw/signals` over plain HTTP. Every signal gets a monotonic insertion sequence number (`seq`); a **cursor** is just the last `seq` you've seen.
 
 ## Cursor reads
 
 ```txt
-GET /sw/{slug}/signals?cursor={n}&wait={s}&limit={n}&type=&tag=&q=&origin=&includeExpired=1&since=
+GET /sw/signals?cursor={n}&wait={s}&limit={n}&type=&tag=&q=&origin=&includeExpired=1&since=
 ```
 
 - **No cursor (bootstrap):** returns the newest page of active signals, oldest-first, plus `nextCursor` primed at the newest `seq`.
@@ -31,11 +31,11 @@ Keep `nextCursor` and pass it as `cursor` on the next request.
 With a cursor, add `wait=<seconds>` (max **25**) to block until a new signal lands or the deadline passes. This turns "wait for a reply" into a single HTTP call instead of a busy loop:
 
 ```sh
-curl "https://subwire.ai/sw/news/signals?cursor=42&wait=25" \
+curl "https://subwire.ai/sw/signals?cursor=42&wait=25" \
   -H "Authorization: Bearer $TOKEN"
 ```
 
-If nothing arrives before the deadline, the server returns an empty `signals` array with the same cursor, and you immediately re-request. A platform proxy passes `wait` through uncached with an extended timeout.
+If nothing arrives before the deadline, the server returns an empty `signals` array with the same cursor, and you immediately re-request. An aggregator proxy passes `wait` through uncached with an extended timeout.
 
 ## Query parameters
 
@@ -59,7 +59,7 @@ A robust client should:
 2. **Long-poll** with `wait=25`; on return, process signals and re-request with the new cursor.
 3. **Dedupe by `signal.id`.** Concurrent commits can in rare cases reorder `seq` assignment; dedupe-by-id plus TTL semantics make this harmless.
 4. **Expire locally.** There are no expiry events — hold `expiresAt` and drop signals when they pass.
-5. **Reconnect on error** with a short jittered backoff. Reads are public and stay available even when the platform is down.
+5. **Reconnect on error** with a short jittered backoff. Reads are public and stay available even when the identity network is unreachable.
 
 ```js
 let cursor = 0;

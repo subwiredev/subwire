@@ -1,12 +1,19 @@
-import { isValidSubwireSlug } from "./slug.js";
-
+/**
+ * `sw://` object identity. A **subwire** is the whole communication network a
+ * server hosts — one server, one subwire — addressed by its authority alone:
+ *
+ *   sw://subwire.ai                         the subwire (the network)
+ *   sw://subwire.ai/signals/{id}            a signal on it
+ *   sw://subwire.ai/identities/{id}         an identity on it
+ *
+ * There are no channels/slugs: signals are organized by tags, not by address.
+ */
 export interface SubwireUri {
   host: string;
   port: string | null;
   target:
-    | { kind: "authority" }
-    | { kind: "subwire"; slug: string }
-    | { kind: "signal"; slug: string; signalId: string }
+    | { kind: "subwire" }
+    | { kind: "signal"; signalId: string }
     | { kind: "identity"; identity: string };
 }
 
@@ -15,9 +22,9 @@ export function subwireAuthority(host: string, port?: string | number | null): s
     const url = new URL(host);
     return subwireAuthority(url.hostname, url.port || port);
   }
-  // Hostnames canonicalize to lowercase everywhere: scopes and addresses are
-  // compared by exact string equality, so case must never reach them. (The
-  // WHATWG URL parser does NOT fold case for non-special schemes like sw:.)
+  // Hostnames canonicalize to lowercase everywhere: authorities are compared by
+  // exact string equality, so case must never reach them. (The WHATWG URL
+  // parser does NOT fold case for non-special schemes like sw:.)
   const normalizedHost = host.replace(/^sw:\/\//, "").replace(/\/.*$/, "").toLowerCase();
   const normalizedPort = port == null || port === "" ? "" : `:${port}`;
   return `${normalizedHost}${normalizedPort}`;
@@ -36,12 +43,13 @@ export function buildSubwireUri(authority: string, ...segments: Array<string | n
   return path ? `sw://${authority}/${path}` : `sw://${authority}`;
 }
 
-export function subwireUri(authority: string, slug: string): string {
-  return buildSubwireUri(authority, slug);
+/** The subwire itself: `sw://{authority}`. */
+export function subwireUri(authority: string): string {
+  return buildSubwireUri(authority);
 }
 
-export function signalObjectUri(authority: string, slug: string, signalId: string): string {
-  return buildSubwireUri(authority, slug, "signals", signalId);
+export function signalObjectUri(authority: string, signalId: string): string {
+  return buildSubwireUri(authority, "signals", signalId);
 }
 
 export function identityObjectUri(authority: string, identity: string): string {
@@ -65,7 +73,7 @@ export function signalIdFromRef(ref: string): string {
   if (!ref.startsWith("sw://")) return ref;
   const parsed = parseSubwireUri(ref);
   if (parsed.target.kind !== "signal") {
-    throw new Error("Signal reference URI must point at sw://host/{slug}/signals/{id}");
+    throw new Error("Signal reference URI must point at sw://{authority}/signals/{id}");
   }
   return parsed.target.signalId;
 }
@@ -81,25 +89,18 @@ export function parseSubwireUri(input: string): SubwireUri {
   const host = url.hostname.toLowerCase();
   const port = url.port || null;
   const segments = url.pathname.replace(/^\/+|\/+$/g, "").split("/").filter(Boolean);
-  const [first, second, third] = segments;
+  const [first, second] = segments;
 
   if (!first) {
-    return { host, port, target: { kind: "authority" } };
+    return { host, port, target: { kind: "subwire" } };
   }
   if (first === "identities") {
-    if (!second) throw new Error("Identity URI must include an id");
+    if (!second || segments.length !== 2) throw new Error("Identity URI must be sw://{authority}/identities/{id}");
     return { host, port, target: { kind: "identity", identity: decodeURIComponent(second) } };
   }
-
-  const slug = decodeURIComponent(first);
-  if (!isValidSubwireSlug(slug)) {
-    throw new Error(`Subwire URI has an invalid subwire slug: ${slug}`);
-  }
-  if (segments.length === 1) {
-    return { host, port, target: { kind: "subwire", slug } };
-  }
-  if (second === "signals" && third && segments.length === 3) {
-    return { host, port, target: { kind: "signal", slug, signalId: decodeURIComponent(third) } };
+  if (first === "signals") {
+    if (!second || segments.length !== 2) throw new Error("Signal URI must be sw://{authority}/signals/{id}");
+    return { host, port, target: { kind: "signal", signalId: decodeURIComponent(second) } };
   }
 
   throw new Error("Unknown Subwire URI target");
@@ -111,16 +112,14 @@ export function subwireUriToHttpOrigin(uri: SubwireUri, secure = true): string {
 }
 
 // Maps an sw:// URI onto the authority's HTTP surface, where subwire traffic
-// is namespaced under /sw/: sw://subwire.ai/news -> https://subwire.ai/sw/news
+// is namespaced under /sw/: sw://subwire.ai/signals/x -> https://subwire.ai/sw/signals/x
 export function subwireUriToHttpUrl(uri: SubwireUri, secure = true): string {
   const origin = subwireUriToHttpOrigin(uri, secure);
   switch (uri.target.kind) {
-    case "authority":
-      return origin;
     case "subwire":
-      return `${origin}/sw/${encodeURIComponent(uri.target.slug)}`;
+      return `${origin}/sw`;
     case "signal":
-      return `${origin}/sw/${encodeURIComponent(uri.target.slug)}/signals/${encodeURIComponent(uri.target.signalId)}`;
+      return `${origin}/sw/signals/${encodeURIComponent(uri.target.signalId)}`;
     case "identity":
       return `${origin}/identities/${encodeURIComponent(uri.target.identity)}`;
   }

@@ -1,36 +1,29 @@
 import { Hono } from "hono";
-import { and, eq, gte, sql } from "drizzle-orm";
-import type { SubwireEnv } from "../subwires.js";
+import { gte, sql } from "drizzle-orm";
 import { db } from "../db/client.js";
 import { signals } from "../db/schema.js";
 import { boundedInt } from "../http.js";
 import { recentPollerCount } from "../presence.js";
 import { countActiveSignals } from "../signal-store.js";
 
-export const statsRoute = new Hono<SubwireEnv>();
+export const statsRoute = new Hono();
 
 const STATS_CACHE_TTL_MS = 30_000;
 
 interface StatsBody {
-  subwire: string;
   bucketSeconds: number;
   generatedAt: string;
-  current: {
-    activeSignals: number;
-    activeIdentities: number;
-    recentPollers: number;
-  };
+  current: { activeSignals: number; activeIdentities: number; recentPollers: number };
   buckets: Array<{ at: string; signals: number; identities: number }>;
 }
 
 const cache = new Map<string, { expiresAt: number; body: StatsBody }>();
 
 statsRoute.get("/", async (c) => {
-  const subwire = c.get("subwire");
   const bucketSeconds = boundedInt(c.req.query("bucketSeconds"), 60, 60, 3600);
   const bucketCount = boundedInt(c.req.query("buckets"), 30, 6, 120);
 
-  const cacheKey = `${subwire}:${bucketSeconds}:${bucketCount}`;
+  const cacheKey = `${bucketSeconds}:${bucketCount}`;
   const nowMs = Date.now();
   const cached = cache.get(cacheKey);
   if (cached && cached.expiresAt > nowMs) {
@@ -44,7 +37,7 @@ statsRoute.get("/", async (c) => {
   const windowStart = new Date(firstBucketMs);
 
   const [current, rows] = await Promise.all([
-    countActiveSignals(subwire),
+    countActiveSignals(),
     db
       .select({
         bucket: sql<string>`date_bin(make_interval(secs => ${bucketSeconds}), ${signals.createdAt}, to_timestamp(0))`,
@@ -52,7 +45,7 @@ statsRoute.get("/", async (c) => {
         identities: sql<number>`count(distinct ${signals.origin})::int`,
       })
       .from(signals)
-      .where(and(eq(signals.subwire, subwire), gte(signals.createdAt, windowStart)))
+      .where(gte(signals.createdAt, windowStart))
       .groupBy(sql`1`),
   ]);
 
@@ -68,7 +61,6 @@ statsRoute.get("/", async (c) => {
   });
 
   const body: StatsBody = {
-    subwire,
     bucketSeconds,
     generatedAt: new Date(nowMs).toISOString(),
     current: {

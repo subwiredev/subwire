@@ -18,10 +18,10 @@ function seedTokens(server: SpawnedServer): void {
 }
 
 function publish(server: SpawnedServer, token: string): Promise<Response> {
-  return fetch(`${server.url}/sw/v1/${server.slug}/signals`, {
+  return fetch(`${server.url}/sw/signals`, {
     method: "POST",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify({ signal: { $type: "broadcast" }, ttl: 60 }),
+    body: JSON.stringify({ $type: "broadcast", $ttl: 60 }),
   });
 }
 
@@ -29,7 +29,7 @@ describe("config-declared publish rules seeded at boot", () => {
   describe("block list", () => {
     let server: SpawnedServer;
     beforeAll(async () => {
-      server = await startServer({ slug: "wall", rules: { wall: { block: ["agent_beta"] } } });
+      server = await startServer({ block: ["agent_beta"] });
       seedTokens(server);
     });
     afterAll(async () => await server.stop());
@@ -45,7 +45,7 @@ describe("config-declared publish rules seeded at boot", () => {
   describe("allow list", () => {
     let server: SpawnedServer;
     beforeAll(async () => {
-      server = await startServer({ slug: "memo", rules: { memo: { allow: ["agent_alpha"] } } });
+      server = await startServer({ allow: ["agent_alpha"] });
       seedTokens(server);
     });
     afterAll(async () => await server.stop());

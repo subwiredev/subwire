@@ -7,7 +7,7 @@ const OTHER_TOKEN = "swt_test_token_beta";
 let server: SpawnedServer;
 
 beforeAll(async () => {
-  server = await startServer({ slug: "testwire" });
+  server = await startServer({ name: "testwire" });
   server.platform.tokens.set(TOKEN, {
     identityId: "agent_alpha",
     displayName: "Alpha",
@@ -24,17 +24,35 @@ afterAll(async () => {
   await server.stop();
 });
 
+// Tests pass a convenient { signal, ttl?, refId? }; the wire body is the flat
+// signal with $ttl/$refId envelope keys. Anything else passes through (so the
+// "no $type" / malformed cases still exercise the server's validation).
+function toWire(body: Record<string, unknown>): Record<string, unknown> {
+  const { signal, ttl, refId, ...rest } = body as {
+    signal?: Record<string, unknown>;
+    ttl?: number;
+    refId?: string | null;
+  } & Record<string, unknown>;
+  if (!signal) return body;
+  return {
+    ...signal,
+    ...(ttl != null ? { $ttl: ttl } : {}),
+    ...(refId != null ? { $refId: refId } : {}),
+    ...rest,
+  };
+}
+
 async function publish(
   body: Record<string, unknown>,
   token: string | null = TOKEN,
 ): Promise<Response> {
-  return fetch(`${server.url}/sw/v1/${server.slug}/signals`, {
+  return fetch(`${server.url}/sw/signals`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
       ...(token ? { authorization: `Bearer ${token}` } : {}),
     },
-    body: JSON.stringify(body),
+    body: JSON.stringify(toWire(body)),
   });
 }
 
@@ -45,16 +63,17 @@ describe("well-known + subwire", () => {
     const body = await res.json();
     expect(body.protocol).toBe("subwire");
     expect(body.version).toBe("1");
-    expect(body.subwires.map((ch: any) => ch.slug)).toContain("testwire");
+    expect(body.subwire.name).toBe("testwire");
+    expect(body.subwire.uri).toMatch(/^sw:\/\//);
     expect(body.identity).toBe(server.platform.url);
     expect(body.features).toContain("poll");
   });
 
-  test("GET subwire returns meta and stats", async () => {
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/subwire`);
+  test("GET wire returns meta and stats", async () => {
+    const res = await fetch(`${server.url}/sw/v1/wire`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.slug).toBe("testwire");
+    expect(body.name).toBe("testwire");
     expect(body.stats.activeSignals).toBeGreaterThanOrEqual(0);
     expect(typeof body.stats.recentPollers).toBe("number");
   });
@@ -76,7 +95,7 @@ describe("publish auth", () => {
     expect(body.ok).toBe(true);
     expect(body.signal.origin).toBe("agent_alpha");
     expect(body.signal.originName).toBe("Alpha");
-    expect(body.signal.uri).toContain("/testwire/signals/");
+    expect(body.signal.uri).toContain("/signals/");
   });
 
   test("caches verify results instead of calling the platform per request", async () => {
@@ -133,7 +152,7 @@ describe("cursor polling", () => {
     await publish({ signal: { $type: "broadcast", seq: "a" }, ttl: 300 });
     await publish({ signal: { $type: "broadcast", seq: "b" }, ttl: 300 });
 
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/signals?limit=100`);
+    const res = await fetch(`${server.url}/sw/v1/signals?limit=100`);
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.signals.length).toBeGreaterThanOrEqual(2);
@@ -143,11 +162,11 @@ describe("cursor polling", () => {
   });
 
   test("incremental polls return only new signals and advance the cursor", async () => {
-    const bootstrap = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals`)).json();
+    const bootstrap = await (await fetch(`${server.url}/sw/v1/signals`)).json();
     const cursor = bootstrap.nextCursor;
 
     const empty = await (
-      await fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=${cursor}`)
+      await fetch(`${server.url}/sw/v1/signals?cursor=${cursor}`)
     ).json();
     expect(empty.signals).toEqual([]);
     expect(empty.nextCursor).toBe(cursor);
@@ -155,20 +174,20 @@ describe("cursor polling", () => {
     await publish({ signal: { $type: "broadcast", seq: "fresh" }, ttl: 300 });
 
     const next = await (
-      await fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=${cursor}`)
+      await fetch(`${server.url}/sw/v1/signals?cursor=${cursor}`)
     ).json();
     expect(next.signals.length).toBe(1);
     expect(next.signals[0].payload.seq).toBe("fresh");
     expect(Number(next.nextCursor)).toBeGreaterThan(Number(cursor));
 
     const again = await (
-      await fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=${next.nextCursor}`)
+      await fetch(`${server.url}/sw/v1/signals?cursor=${next.nextCursor}`)
     ).json();
     expect(again.signals).toEqual([]);
   });
 
   test("rejects malformed cursors", async () => {
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=banana`);
+    const res = await fetch(`${server.url}/sw/v1/signals?cursor=banana`);
     expect(res.status).toBe(400);
   });
 });
@@ -178,19 +197,19 @@ describe("filters", () => {
     await publish({ signal: { $type: "offer", $tags: ["Compute", "gpu"], item: "h100" }, ttl: 300 });
     await publish({ signal: { $type: "request", item: "zebra-needle" }, ttl: 300 }, OTHER_TOKEN);
 
-    const byType = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals?type=offer`)).json();
+    const byType = await (await fetch(`${server.url}/sw/v1/signals?type=offer`)).json();
     expect(byType.signals.length).toBeGreaterThanOrEqual(1);
     expect(byType.signals.every((s: any) => s.type === "offer")).toBe(true);
 
-    const byTag = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals?tag=GPU`)).json();
+    const byTag = await (await fetch(`${server.url}/sw/v1/signals?tag=GPU`)).json();
     expect(byTag.signals.length).toBeGreaterThanOrEqual(1);
     expect(byTag.signals.every((s: any) => s.tags.includes("gpu"))).toBe(true);
 
-    const byOrigin = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals?origin=agent_beta`)).json();
+    const byOrigin = await (await fetch(`${server.url}/sw/v1/signals?origin=agent_beta`)).json();
     expect(byOrigin.signals.length).toBeGreaterThanOrEqual(1);
     expect(byOrigin.signals.every((s: any) => s.origin === "agent_beta")).toBe(true);
 
-    const byQ = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals?q=zebra-needle`)).json();
+    const byQ = await (await fetch(`${server.url}/sw/v1/signals?q=zebra-needle`)).json();
     expect(byQ.signals.length).toBe(1);
     expect(byQ.signals[0].payload.item).toBe("zebra-needle");
   });
@@ -206,20 +225,20 @@ describe("threads and detail", () => {
       OTHER_TOKEN,
     );
 
-    const detail = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals/${root.id}`)).json();
+    const detail = await (await fetch(`${server.url}/sw/v1/signals/${root.id}`)).json();
     expect(detail.signal.id).toBe(root.id);
     expect(detail.replies.length).toBe(1);
     expect(detail.replies[0].refId).toBe(root.id);
 
     const thread = await (
-      await fetch(`${server.url}/sw/v1/${server.slug}/signals/${root.id}/thread`)
+      await fetch(`${server.url}/sw/v1/signals/${root.id}/thread`)
     ).json();
     expect(thread.signals.length).toBe(2);
     expect(thread.signals[0].id).toBe(root.id);
   });
 
   test("404s unknown signals", async () => {
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/signals/doesnotexist`);
+    const res = await fetch(`${server.url}/sw/v1/signals/doesnotexist`);
     expect(res.status).toBe(404);
   });
 });
@@ -231,12 +250,12 @@ describe("admin", () => {
   };
 
   test("requires the admin token", async () => {
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/admin/subwire`);
+    const res = await fetch(`${server.url}/sw/v1/admin/wire`);
     expect(res.status).toBe(401);
   });
 
   test("updates subwire meta", async () => {
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/admin/subwire`, {
+    const res = await fetch(`${server.url}/sw/v1/admin/wire`, {
       method: "PATCH",
       headers: adminHeaders,
       body: JSON.stringify({ name: "Test Wire", description: "integration subwire" }),
@@ -245,12 +264,12 @@ describe("admin", () => {
     const body = await res.json();
     expect(body.name).toBe("Test Wire");
 
-    const subwire = await (await fetch(`${server.url}/sw/v1/${server.slug}/subwire`)).json();
+    const subwire = await (await fetch(`${server.url}/sw/v1/wire`)).json();
     expect(subwire.name).toBe("Test Wire");
   });
 
   test("deny rules block publishes after the policy cache clears", async () => {
-    const created = await fetch(`${server.url}/sw/v1/${server.slug}/admin/rules`, {
+    const created = await fetch(`${server.url}/sw/v1/admin/rules`, {
       method: "POST",
       headers: adminHeaders,
       body: JSON.stringify({ ruleType: "deny", identityId: "agent_beta" }),
@@ -261,7 +280,7 @@ describe("admin", () => {
     const denied = await publish({ signal: { $type: "broadcast" }, ttl: 60 }, OTHER_TOKEN);
     expect(denied.status).toBe(403);
 
-    const removed = await fetch(`${server.url}/sw/v1/${server.slug}/admin/rules/${rule.id}`, {
+    const removed = await fetch(`${server.url}/sw/v1/admin/rules/${rule.id}`, {
       method: "DELETE",
       headers: adminHeaders,
     });
@@ -275,24 +294,24 @@ describe("admin", () => {
     const res = await publish({ signal: { $type: "broadcast", msg: "doomed" }, ttl: 300 });
     const { signal } = await res.json();
 
-    const del = await fetch(`${server.url}/sw/v1/${server.slug}/admin/signals/${signal.id}`, {
+    const del = await fetch(`${server.url}/sw/v1/admin/signals/${signal.id}`, {
       method: "DELETE",
       headers: adminHeaders,
     });
     expect(del.status).toBe(200);
 
-    const detail = await fetch(`${server.url}/sw/v1/${server.slug}/signals/${signal.id}`);
+    const detail = await fetch(`${server.url}/sw/v1/signals/${signal.id}`);
     expect(detail.status).toBe(404);
   });
 });
 
 describe("long-poll", () => {
   test("wait blocks until a publish lands, then returns early", async () => {
-    const bootstrap = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals`)).json();
+    const bootstrap = await (await fetch(`${server.url}/sw/v1/signals`)).json();
     const cursor = bootstrap.nextCursor;
 
     const started = Date.now();
-    const waiting = fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=${cursor}&wait=10`);
+    const waiting = fetch(`${server.url}/sw/v1/signals?cursor=${cursor}&wait=10`);
     // Let the long-poll establish, then publish.
     setTimeout(() => {
       void publish({ signal: { $type: "broadcast", seq: "longpoll" }, ttl: 300 });
@@ -308,9 +327,9 @@ describe("long-poll", () => {
   });
 
   test("wait without news times out empty at the deadline", async () => {
-    const bootstrap = await (await fetch(`${server.url}/sw/v1/${server.slug}/signals`)).json();
+    const bootstrap = await (await fetch(`${server.url}/sw/v1/signals`)).json();
     const started = Date.now();
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/signals?cursor=${bootstrap.nextCursor}&wait=1`);
+    const res = await fetch(`${server.url}/sw/v1/signals?cursor=${bootstrap.nextCursor}&wait=1`);
     const body = await res.json();
     expect(body.signals).toEqual([]);
     expect(Date.now() - started).toBeGreaterThanOrEqual(950);
@@ -319,10 +338,10 @@ describe("long-poll", () => {
 
 describe("stats", () => {
   test("returns live bucketed stats", async () => {
-    const res = await fetch(`${server.url}/sw/v1/${server.slug}/stats?bucketSeconds=60&buckets=10`);
+    const res = await fetch(`${server.url}/sw/v1/stats?bucketSeconds=60&buckets=10`);
     expect(res.status).toBe(200);
     const body = await res.json();
-    expect(body.subwire).toBe("testwire");
+    expect(body.bucketSeconds).toBe(60);
     expect(body.buckets.length).toBe(10);
     expect(body.current.activeSignals).toBeGreaterThan(0);
     const total = body.buckets.reduce((sum: number, b: any) => sum + b.signals, 0);

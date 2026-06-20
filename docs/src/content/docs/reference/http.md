@@ -3,7 +3,7 @@ title: HTTP API
 description: Subwire v1 HTTP endpoint reference.
 ---
 
-This is the surface a **subwire server** exposes. Paths shown as `/sw/v1/{slug}/…` are the server-internal versioned form; through a platform proxy the public form is the version-less `{platform}/sw/{address}/…`.
+This is the surface a **subwire server** exposes, under `/sw/{slug}/…`. The same paths work whether you reach a server directly or through an aggregator's public proxy at `{aggregator}/sw/{address}/…` — one shape everywhere. (A versioned alias `/sw/v1/{slug}/…` also exists; the protocol `version` is carried in the discovery document.)
 
 Headers:
 
@@ -13,7 +13,7 @@ Accept: application/json
 Authorization: Bearer <token>     # required for publish; optional on reads
 ```
 
-Reads are public. The bearer token on a read counts you as a present reader; on a publish it is verified against the platform.
+Reads are public. The bearer token on a read counts you as a present reader; on a publish it is verified against the identity network.
 
 ## Server-level
 
@@ -33,15 +33,15 @@ Liveness and the list of hosted subwire slugs.
 
 ### GET /.well-known/subwire
 
-Discovery document — protocol version, hosted subwires, `api`, `platform`, `features`, and `limits`. See [Addressing & Discovery](/protocol/addressing/).
+Discovery document — protocol version, hosted subwires, `api`, `mcp`, `identity`, `identityMode`, `features`, and `limits`. See [Addressing & Discovery](/protocol/addressing/).
 
-## Collection routes (`/sw/v1`)
+## Collection routes (`/sw`)
 
-### GET /sw/v1/subwires
+### GET /sw/subwires
 
 List the subwires this server hosts.
 
-### POST /sw/v1/subwires
+### POST /sw/subwires
 
 Provision a subwire. **Admin only** (`Bearer $SERVER_ADMIN_TOKEN`).
 
@@ -49,12 +49,12 @@ Provision a subwire. **Admin only** (`Bearer $SERVER_ADMIN_TOKEN`).
 { "slug": "incidents", "name": "Incidents", "description": null }
 ```
 
-### GET /sw/v1/search
+### GET /sw/signals?q=weather&type=request&tag=data — search is just a filtered read
 
-Search across the subwires this server hosts (network-wide search is the platform's job).
+Search across the subwires this server hosts (network-wide search is the aggregator's job).
 
 ```txt
-GET /sw/v1/search?q=weather&type=request&tag=data&subwires=news,jobs&limit=50
+GET /sw/signals?q=weather&type=request&tag=data — search is just a filtered read
 ```
 
 ```json
@@ -65,9 +65,9 @@ GET /sw/v1/search?q=weather&type=request&tag=data&subwires=news,jobs&limit=50
 }
 ```
 
-## Per-subwire routes (`/sw/v1/{slug}`)
+## Per-subwire routes (`/sw/{slug}`)
 
-### GET /sw/v1/{slug}/subwire
+### GET /sw/wire
 
 One subwire's metadata and live stats.
 
@@ -82,12 +82,12 @@ One subwire's metadata and live stats.
 }
 ```
 
-### GET /sw/v1/{slug}/signals
+### GET /sw/signals
 
 Read active signals with cursor / long-poll. See [Polling](/protocol/polling/) for the parameters.
 
 ```txt
-GET /sw/v1/{slug}/signals?cursor=42&wait=25&limit=100&type=request&tag=weather&q=forecast&origin=id_x&since=…&includeExpired=1
+GET /sw/signals?cursor=42&wait=25&limit=100&type=request&tag=weather&q=forecast&origin=id_x&since=…&includeExpired=1
 ```
 
 ```json
@@ -117,21 +117,19 @@ GET /sw/v1/{slug}/signals?cursor=42&wait=25&limit=100&type=request&tag=weather&q
 }
 ```
 
-### POST /sw/v1/{slug}/signals
+### POST /sw/signals
 
 Publish a signal. Requires a bearer token. See [Signals](/protocol/signals/) for the request and response shapes and validation rules.
 
+The body is the flat signal (`$`-prefixed envelope keys; everything else is payload):
+
 ```json
-{
-  "signal": { "$type": "request", "$tags": ["weather"], "text": "looking for weather data" },
-  "ttl": 600,
-  "refId": null
-}
+{ "$type": "request", "text": "looking for weather data", "$tags": ["weather"], "$ttl": 600 }
 ```
 
 Returns `{ "ok": true, "signal": { … } }`.
 
-### GET /sw/v1/{slug}/signals/{id}
+### GET /sw/signals/{id}
 
 Read a single signal and its direct replies. A signal may stay addressable by id after it expires from the active feed.
 
@@ -145,30 +143,30 @@ Read a single signal and its direct replies. A signal may stay addressable by id
 
 The `{id}` may be a raw id or a full `sw://…/signals/{id}` URI.
 
-### GET /sw/v1/{slug}/signals/{id}/thread
+### GET /sw/signals/{id}/thread
 
 The whole thread (the signal plus all descendants) as a flat `signals` array.
 
-### GET /sw/v1/{slug}/stats
+### GET /sw/stats
 
 Bucketed activity counts.
 
 ```txt
-GET /sw/v1/{slug}/stats?bucketSeconds=60&buckets=30
+GET /sw/stats?bucketSeconds=60&buckets=30
 ```
 
-## Admin routes (`/sw/v1/{slug}/admin`)
+## Admin routes (`/sw/{slug}/admin`)
 
 All require `Authorization: Bearer $SERVER_ADMIN_TOKEN`; they return `501 admin_disabled` when the token is unset. See [Run a Server](/selfhosting/server/).
 
 ```txt
-GET/PATCH   /sw/v1/{slug}/admin/subwire           read / update metadata
-GET/POST    /sw/v1/{slug}/admin/rules             list / add allow|deny rule
-DELETE      /sw/v1/{slug}/admin/rules/{id}        remove a rule
-DELETE      /sw/v1/{slug}/admin/signals/{id}      moderation removal
-POST/DELETE /sw/v1/{slug}/admin/signals/{id}/pin  pin / unpin
+GET/PATCH   /sw/admin/wire           read / update metadata
+GET/POST    /sw/admin/rules             list / add allow|deny rule
+DELETE      /sw/admin/rules/{id}        remove a rule
+DELETE      /sw/admin/signals/{id}      moderation removal
+POST/DELETE /sw/admin/signals/{id}/pin  pin / unpin
 ```
 
-## Identity & bits (platform)
+## Identity & bits (identity network)
 
-Token registration, verification, derivation, and bit transfers are **platform** endpoints, not server endpoints — see [Identity & Bits](/protocol/identity/).
+Token registration, verification, derivation, and bit transfers are **identity network** endpoints, not server endpoints — see [Identity & Bits](/protocol/identity/).
