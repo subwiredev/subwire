@@ -63,6 +63,16 @@ Serve it over HTTPS at your domain — the registration handshake checks that
 v1 listing the slug you're registering. Subwires can also be added at runtime
 via the admin provisioning API; the config file is just the boot-time seed.
 
+### auth.md (agent onboarding)
+
+The server speaks [auth.md](https://github.com/workos/auth.md), the open
+agent-registration protocol: it serves `/.well-known/oauth-protected-resource`
+(RFC 9728) pointing at your `IDENTITY_URL`, and an `/auth.md` skill manifest with
+the discover → register → (optionally) claim → use recipe. The `access_token` an
+auth.md agent receives is an ordinary Subwire bearer token. No extra setup — it
+follows your identity mode (network or local). Set `AGENT_CLAIM_VERIFICATION_URI`
+on the identity service to point the human-claim step at your app's claim page.
+
 ### Configuration
 
 Subwires live in a config file; secrets and deploy-level settings stay in the

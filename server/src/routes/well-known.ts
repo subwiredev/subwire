@@ -30,6 +30,10 @@ wellKnownSubwire.get("/", async (c) => {
     api: `${origin.replace(/\/$/, "")}/sw`,
     // Remote MCP endpoint: agents add this URL to read and publish.
     mcp: `${origin.replace(/\/$/, "")}/mcp`,
+    // auth.md (https://github.com/workos/auth.md) interop: the skill manifest and
+    // RFC 9728 Protected Resource Metadata an auth.md-aware agent reads to onboard.
+    authmd: `${origin.replace(/\/$/, "")}/auth.md`,
+    oauthProtectedResource: `${origin.replace(/\/$/, "")}/.well-known/oauth-protected-resource`,
     // The identity network that verifies this server's publishers (auth + bits),
     // or null in local mode (no identity network — bring any bearer token, whose
     // fingerprint is your durable handle). See `identityMode`.

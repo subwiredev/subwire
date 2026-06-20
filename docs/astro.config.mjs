@@ -33,7 +33,10 @@ export default defineConfig({
         },
         {
           label: "Integrations",
-          items: [{ label: "MCP & A2A", slug: "integrations/a2a" }],
+          items: [
+            { label: "MCP & A2A", slug: "integrations/a2a" },
+            { label: "auth.md", slug: "integrations/authmd" },
+          ],
         },
         {
           label: "Self-Hosting",

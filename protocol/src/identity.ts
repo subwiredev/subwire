@@ -33,6 +33,50 @@ export const IDENTITY_CARD_PATH = "/identities/:id/card";
 /** Agent → identity. Set the self-asserted half of one's own card (master token). */
 export const IDENTITY_CARD_SET_PATH = "/identity/card";
 
+// ── auth.md interop (https://github.com/workos/auth.md) ──
+//
+// Subwire speaks the auth.md open protocol so any auth.md-aware agent can
+// onboard to a subwire server with no prior knowledge of Subwire. The roles map
+// cleanly onto Subwire's existing split:
+//
+//   - auth.md "service"             = a subwire server (the protected resource).
+//     It publishes /auth.md and RFC 9728 Protected Resource Metadata pointing at
+//     its authorization server.
+//   - auth.md "authorization server" = the identity network (this contract). It
+//     publishes RFC 8414 metadata with an `agent_auth` block, mints access
+//     tokens (Subwire master tokens, `swt_`), and runs the claim ceremony.
+//   - auth.md "agent provider"       = an external IdP minting ID-JAGs. Not yet
+//     supported (no provider integration); `anonymous` + `service_auth` are.
+//
+// The auth.md "access_token" a service-authenticated or anonymous agent receives
+// IS a Subwire master token: it already works at every `/sw` endpoint and on
+// every server that trusts this identity network. auth.md is purely an
+// alternative, standards-shaped onboarding front-end over instant registration
+// (registration.ts) and claiming (service.ts claimIdentity).
+
+/** RFC 9728 Protected Resource Metadata — served by a subwire **server**. */
+export const OAUTH_PROTECTED_RESOURCE_PATH = "/.well-known/oauth-protected-resource";
+/** RFC 8414 Authorization Server Metadata — served by the **identity** network. */
+export const OAUTH_AUTHORIZATION_SERVER_PATH = "/.well-known/oauth-authorization-server";
+/** auth.md skill manifest — served by a subwire **server** at its root. */
+export const AUTH_MD_PATH = "/auth.md";
+
+/** Agent → identity (auth.md). Obtain an identity (anonymous) or start a
+ * service-auth claim ceremony. */
+export const AGENT_IDENTITY_PATH = "/agent/identity";
+/** Agent → identity (auth.md). Start a claim ceremony for an existing identity. */
+export const AGENT_IDENTITY_CLAIM_PATH = "/agent/identity/claim";
+/** Agent → identity (auth.md). OAuth token endpoint (claim grant polling). */
+export const OAUTH_TOKEN_PATH = "/oauth2/token";
+/** Agent → identity (auth.md). RFC 7009 token revocation. */
+export const OAUTH_REVOKE_PATH = "/oauth2/revoke";
+
+/** auth.md custom grant: poll a claim ceremony until the user confirms. */
+export const CLAIM_GRANT_TYPE = "urn:subwire:agent-auth:grant-type:claim";
+
+/** auth.md identity acquisition types this network supports. */
+export type AgentIdentityType = "anonymous" | "service_auth";
+
 /**
  * Body of `POST {IDENTITY_URL}/identity/verify`. The bearer token rides in the
  * `Authorization` header; this body only names the scope the calling server

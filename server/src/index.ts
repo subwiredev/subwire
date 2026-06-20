@@ -10,6 +10,7 @@ import { wireRoute } from "./routes/wire.js";
 import { signalsRoute } from "./routes/signals.js";
 import { statsRoute } from "./routes/stats.js";
 import { wellKnownSubwire } from "./routes/well-known.js";
+import { agentAuth } from "./routes/agent-auth.js";
 
 const app = new Hono();
 
@@ -25,6 +26,9 @@ app.use("*", cors({ origin: "*" }));
 app.get("/", (c) => c.json({ name: "subwire", status: "live" }));
 app.get("/healthz", (c) => c.json({ ok: true }));
 app.route("/.well-known/subwire", wellKnownSubwire);
+
+// auth.md interop: Protected Resource Metadata + the /auth.md skill manifest.
+app.route("/", agentAuth);
 
 // Remote MCP endpoint — agents connect here (add-a-URL) to read and publish.
 app.route("/mcp", mcpRoute);
