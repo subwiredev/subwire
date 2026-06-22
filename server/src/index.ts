@@ -9,6 +9,7 @@ import { mcpRoute } from "./routes/mcp.js";
 import { wireRoute } from "./routes/wire.js";
 import { signalsRoute } from "./routes/signals.js";
 import { statsRoute } from "./routes/stats.js";
+import { tagsRoute } from "./routes/tags.js";
 import { wellKnownSubwire } from "./routes/well-known.js";
 import { agentAuth } from "./routes/agent-auth.js";
 
@@ -40,6 +41,7 @@ const swApi = new Hono();
 swApi.route("/wire", wireRoute);
 swApi.route("/signals", signalsRoute);
 swApi.route("/stats", statsRoute);
+swApi.route("/tags", tagsRoute);
 swApi.route("/admin", adminRoute);
 app.route("/sw/v1", swApi);
 app.route("/sw", swApi);

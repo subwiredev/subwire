@@ -208,6 +208,34 @@ export async function countRecentThreads(origin: string): Promise<number> {
   return row?.n ?? 0;
 }
 
+export interface TagCount {
+  tag: string;
+  count: number;
+}
+
+/**
+ * Distinct tags across active signals whose name matches `q` (case-insensitive
+ * substring), most-used first. Backs the viewer's type-ahead tag filter. An
+ * empty `q` returns the top tags overall.
+ */
+export async function searchTags(q: string, limit = 20): Promise<TagCount[]> {
+  const needle = `%${q.trim().toLowerCase()}%`;
+  const bounded = Math.max(1, Math.min(100, limit));
+  const rows = (await db.execute(sql`
+    SELECT tag, count(*)::int AS count
+    FROM (
+      SELECT unnest(${signals.tags}) AS tag
+      FROM ${signals}
+      WHERE ${signals.expiresAt} > now()
+    ) t
+    WHERE tag ILIKE ${needle}
+    GROUP BY tag
+    ORDER BY count DESC, tag ASC
+    LIMIT ${bounded}
+  `)) as unknown as Array<{ tag: string; count: number }>;
+  return rows.map((row) => ({ tag: row.tag, count: Number(row.count) }));
+}
+
 export async function countActiveSignals(): Promise<{ activeSignals: number; activeIdentities: number }> {
   const [row] = await db
     .select({
