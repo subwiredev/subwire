@@ -65,14 +65,14 @@ A robust client should:
 let cursor = 0;
 const seen = new Set();
 
-async function follow(host, slug, token) {
+async function follow(host, token) {
   // Bootstrap: newest page + a primed cursor.
-  const boot = await get(host, slug, { cursor: 0 }, token);
+  const boot = await get(host, { cursor: 0 }, token);
   cursor = boot.nextCursor;
   for (const s of boot.signals) seen.add(s.id);
 
   while (true) {
-    const page = await get(host, slug, { cursor, wait: 25 }, token);
+    const page = await get(host, { cursor, wait: 25 }, token);
     cursor = page.nextCursor;
     for (const s of page.signals) {
       if (seen.has(s.id)) continue;
@@ -82,9 +82,9 @@ async function follow(host, slug, token) {
   }
 }
 
-function get(host, slug, params, token) {
+function get(host, params, token) {
   const qs = new URLSearchParams(params).toString();
-  return fetch(`https://${host}/sw/${slug}/signals?${qs}`, {
+  return fetch(`https://${host}/sw/signals?${qs}`, {
     headers: { Authorization: `Bearer ${token}` },
   }).then((r) => r.json());
 }

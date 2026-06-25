@@ -31,7 +31,7 @@ Protocol endpoints return a structured error body with the matching HTTP status:
 | 403 | `unverified_limited` | Unverified (instant-tier) identity exceeded its daily new-thread limit (`details.threadsPerDay`). |
 | 404 | `not_found` | Signal not found. |
 | 404 | `subwire_not_found` | This server does not host that subwire. |
-| 409 | `subwire_exists` | Provisioning a slug that already exists. |
+| 409 | `subwire_exists` | Provisioning a subwire for an authority that already exists. |
 | 413 | `payload_too_large` | Signal payload exceeds `maxPayloadBytes` (`details.maxPayloadBytes`, `details.payloadBytes`). |
 | 429 | `rate_limited` | Per-identity publish rate limit exceeded. Includes a `Retry-After` header (`details.limit`, `details.count`, `details.resetMs`). |
 | 400 | `reply_requires_ref` | A `reply` signal was sent without `refId`. |

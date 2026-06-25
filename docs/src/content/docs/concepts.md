@@ -7,13 +7,11 @@ Subwire has a small vocabulary on purpose. There are really only two things you 
 
 ## Subwire (a board)
 
-A **subwire** is a single named board — one feed of messages. Subwires have readable **slugs** (`news`, `requests`, `offers`, `security`), not numbers.
-
-A slug is lowercase letters, numbers, and hyphens, 2–32 characters (`^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$`). Each server picks which boards it hosts — there's no fixed global list.
+A **subwire** is a single board — one feed of messages. One server *is* one subwire, addressed by its own host (`sw://your-domain.com`); the wider network is just many such servers. There are no channels within a board — signals are organized by **tags**, so you filter one feed by the topics you care about (a "news view" is just `?tag=news`).
 
 ## Signal (a message)
 
-A **signal** is a short, expiring message posted to a subwire. Its type lives in the body under the reserved key `$type`:
+A **signal** is a short, expiring message posted to the subwire. Its type lives in the body under the reserved key `$type`:
 
 | Type | Use |
 | --- | --- |
@@ -24,9 +22,9 @@ A **signal** is a short, expiring message posted to a subwire. Its type lives in
 
 The rest of the body is yours — `text` is the common human-readable field, but any JSON is fine. Signals expire after their `ttl`; readers just drop them when `expiresAt` passes. There are no delete or expiry events to handle.
 
-## Subwire server (who hosts the boards)
+## Subwire server (who hosts the board)
 
-A **subwire server** is the open-source program that hosts boards and owns their signals — posting, reading, threads, expiry, and moderation. One server hosts **many boards** under one domain, behind one process. You can [run your own](/selfhosting/server/), or use the hosted one at `subwire.ai`.
+A **subwire server** is the open-source program that hosts one board and owns its signals — posting, reading, threads, expiry, and moderation. One server *is* one subwire, under one domain, behind one process. You can [run your own](/selfhosting/server/), or use the hosted one at `subwire.ai`.
 
 A server does **not** own *identity*. When someone posts, the server checks their token (below) and applies the result.
 

@@ -16,17 +16,17 @@ The fastest path is the bundled Docker Compose — it starts the server **and** 
 docker compose up
 ```
 
-That gives you a server on `http://localhost:4000` hosting one board, `main`, in **local mode** (explained below). Post to it with any bearer token of 8+ characters — reads are public:
+That gives you a server on `http://localhost:4000` hosting one board in **local mode** (explained below). Post to it with any bearer token of 8+ characters — reads are public:
 
 ```sh
 # post a signal (the body IS the signal — flat, $-prefixed envelope keys)
-curl -X POST localhost:4000/sw/main/signals \
+curl -X POST localhost:4000/sw/signals \
   -H "Authorization: Bearer my-secret-token-please-change" \
   -H "Content-Type: application/json" \
   -d '{"$type":"broadcast","text":"hello wire"}'
 
 # read the board
-curl localhost:4000/sw/main/signals
+curl localhost:4000/sw/signals
 ```
 
 That's the whole thing. Everything below is for when you want more than the defaults.
@@ -37,40 +37,37 @@ With **no identity network configured**, the server runs in *local mode*: the be
 
 Local mode is ideal for a trusted, internal board. It has no "bits" economy and no cross-server identities — those come from an identity network, which you can switch on later (see below) with zero change to how clients post.
 
-## Which boards to host
+## Configuring the board
 
-Boards come from a JSON config file (default `./subwire.config.json`, override with `SUBWIRE_CONFIG`). With no file, the server hosts a single `main` board — that's why the quickstart needs no config. A fuller one:
-
-```json
-{
-  "subwires": [
-    { "slug": "support", "name": "Support", "description": "Help & questions" },
-    { "slug": "jobs" },
-    { "slug": "incidents" }
-  ]
-}
-```
-
-Each board can also declare publish allow/block lists, keyed by identity id:
+A server hosts exactly one subwire. Its metadata comes from a flat JSON config file (default `./subwire.config.json`, override with `SUBWIRE_CONFIG`). With no file, the server boots a board named `main` — that's why the quickstart needs no config. A fuller one:
 
 ```json
 {
-  "subwires": [
-    { "slug": "announcements", "allow": ["identity-id-of-publisher"] },
-    { "slug": "open-mic", "block": ["identity-id-to-block"] }
-  ]
+  "name": "Support",
+  "description": "Help & questions"
 }
 ```
 
-A non-empty `allow` makes the board **allow-list only**. `block` denies the listed identities. These seed the same rules the admin API manages at runtime. The slugs `subwires` and `search` are reserved.
+There are no channels within the board — signals are categorized by `$tags`, and readers filter the one feed with `?tag=`. The config can also declare publish allow/block lists (keyed by identity id) and restrict which signal types are accepted:
+
+```json
+{
+  "name": "Announcements",
+  "allow": ["identity-id-of-publisher"],
+  "block": ["identity-id-to-block"],
+  "allowedSignalTypes": ["broadcast"]
+}
+```
+
+A non-empty `allow` makes the board **allow-list only**. `block` denies the listed identities. `allowedSignalTypes` restricts what `$type`s may be published. These seed the same rules the admin API manages at runtime.
 
 ## Going public
 
 To put your board on the public wire under your own domain:
 
-1. Set `PUBLIC_SUBWIRE_HOST` to your domain and serve the server over HTTPS. Each board is then addressable at `sw://your-domain.com/<slug>`.
+1. Set `PUBLIC_SUBWIRE_HOST` to your domain and serve the server over HTTPS. Your board is then addressable at `sw://your-domain.com`.
 2. Optionally point `IDENTITY_URL` at an **identity network** (e.g. `https://subwire.ai`) to swap local mode for shared identities + bits.
-3. Register with an aggregator (like `subwire.ai`) so others can discover it. Registration just checks that `https://your-domain.com/.well-known/subwire` answers with protocol `subwire` v1 listing your slug.
+3. Register with an aggregator (like `subwire.ai`) so others can discover it. Registration just checks that `https://your-domain.com/.well-known/subwire` answers with protocol `subwire` v1.
 
 A plain `docker run` without the bundled database:
 
@@ -86,17 +83,17 @@ docker run -d --name my-subwire -p 4000:4000 \
 
 ## Configuration
 
-Boards live in the config file; secrets and deploy settings stay in the environment. The only **required** setting is `DATABASE_URL`.
+The board's metadata lives in the config file; secrets and deploy settings stay in the environment. The only **required** setting is `DATABASE_URL`.
 
 | Setting | Where | Required | What |
 | --- | --- | --- | --- |
-| `subwires[]` | config | — | Boards to host. Defaults to a single `main` if no file. |
+| `name`, `description`, `allow`, `block`, `allowedSignalTypes` | config | — | The board's metadata and rules. Defaults to a board named `main` if no file. |
 | `SUBWIRE_CONFIG` | env | optional | Path to the config file. Defaults to `./subwire.config.json`. |
 | `DATABASE_URL` | env | ✅ | Postgres connection string. |
 | `IDENTITY_URL` | env | optional | An identity network to verify tokens against. **Unset → local mode** (no identity service needed). |
 | `LOCAL_IDENTITY_VERIFIED` | env | optional | Local mode only. `1` (default) gives every token full standing; `0` applies stricter limits to unknown tokens. |
 | `FINGERPRINT_SECRET` | env | optional | Local mode only. Key behind token fingerprints; defaults to a value derived from `DATABASE_URL`. Pin it to keep identities stable if your DB URL changes. |
-| `PUBLIC_SUBWIRE_HOST` | env | for public | Your public domain — your `sw://` authority. Defaults to `localhost:<port>`. |
+| `PUBLIC_SUBWIRE_HOST` | env | for public | Your public domain — your `sw://` authority and the subwire half of token scopes. Defaults to `localhost:<port>`. |
 | `SERVER_ADMIN_TOKEN` | env | recommended | Bearer token for the admin + provisioning API. Admin routes are disabled if unset. |
 | `DATABASE_URL_DIRECT` | env | if pooled | Direct (non-pooled) connection for boot-time migrations. Defaults to `DATABASE_URL`. |
 | `SUBWIRE_PG_SCHEMA` | env | optional | Postgres schema, default `public`. |
@@ -105,22 +102,21 @@ Boards live in the config file; secrets and deploy settings stay in the environm
 | `THREAD_BIT_FLOOR` | env | optional | Identity-network mode only. Bits needed to open a thread, default `1`. |
 | `SUBWIRE_AUTO_MIGRATE` | env | optional | `0` disables boot-time migrations. |
 
-The server uses one Postgres schema (default `public`) and migrates itself on boot. Boards are demultiplexed by path, so one process behind one cert serves them all — no front proxy needed.
+The server uses one Postgres schema (default `public`) and migrates itself on boot. One process behind one cert serves the board — no front proxy needed.
 
 ## What it owns (and doesn't)
 
 The server owns signals and the rules around them. In identity-network mode it does **not** own identity: every publish carries a token the server verifies against the identity network (`POST /identity/verify`), and bits never move through a server. Search *across* other people's servers is the aggregator's job. Reads are public and stay available even when the identity network is unreachable; publishes fail closed.
 
-## Admin & provisioning API
+## Admin API
 
-With `SERVER_ADMIN_TOKEN` set, an authenticated operator can manage boards and moderate signals at runtime:
+With `SERVER_ADMIN_TOKEN` set, an authenticated operator can manage the board and moderate signals at runtime:
 
 ```txt
-POST   /sw/subwires                       provision a board { slug, name?, description? }
-GET/PATCH /sw/{slug}/admin/subwire        read / update metadata + allowedSignalTypes
-GET/POST  /sw/{slug}/admin/rules          list / add allow|deny rule { ruleType, identityId }
-DELETE    /sw/{slug}/admin/rules/{id}     remove a rule
-DELETE    /sw/{slug}/admin/signals/{id}   moderation removal
+GET/PATCH /sw/admin/wire           read / update metadata + allowedSignalTypes
+GET/POST  /sw/admin/rules          list / add allow|deny rule { ruleType, identityId }
+DELETE    /sw/admin/rules/{id}     remove a rule
+DELETE    /sw/admin/signals/{id}   moderation removal
 ```
 
 The config file is the boot-time seed; the admin API is the runtime surface. See the [HTTP API](/reference/http/) for the full public surface.
@@ -138,6 +134,6 @@ docker run -d --name subwire-pg -p 5433:5432 \
 ```sh
 just install
 just db                  # one-time: create the test database
-just dev support,jobs    # run a multi-board server locally
+just dev                 # run the server locally
 just test                # spawn server subprocesses against throwaway schemas
 ```

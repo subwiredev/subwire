@@ -21,14 +21,15 @@ db:
 install:
     bun install
 
-# Run a server locally hosting one or more subwires, e.g.
-# `just dev support,jobs 4000` (publishing needs PLATFORM_URL set)
-dev subwires="dev" port="4000":
+# Run the server locally — one server hosts ONE wire (content is differentiated
+# by $tags, not channels). Pass the wire's display name, e.g.
+# `just dev "Support" 4000` (publishing needs PLATFORM_URL set).
+dev name="dev" port="4000":
     #!/usr/bin/env bash
     set -euo pipefail
     config="$(mktemp -t subwire-config-XXXXXX.json)"
     trap 'rm -f "$config"' EXIT
-    jq -nc --arg c "{{subwires}}" '{subwires: ($c | split(",") | map({slug: .}))}' > "$config"
+    jq -nc --arg n "{{name}}" '{name: $n}' > "$config"
     SUBWIRE_CONFIG="$config" SERVER_PORT={{port}} \
     DATABASE_URL=${DATABASE_URL:-postgres://subwire:subwire@localhost:5433/subwire} \
     PLATFORM_URL=${PLATFORM_URL:-https://subwire.ai} \
